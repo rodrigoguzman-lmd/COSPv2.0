@@ -201,8 +201,9 @@ program cosp_test_v2
        cospIN            ! COSP optical (or derived?) fields needed by simulators
   type(cosp_column_inputs) :: &
        cospstateIN       ! COSP model fields needed by simulators
-  integer :: iChunk,nChunks,start_idx,end_idx,nPtsPerIt
+  integer :: iChunk,nChunks,start_idx,end_idx,nPtsPerIt,iDay,nDayTest
   real(wp),dimension(10) :: driver_time
+  character(len=64) :: nDayTestString
 
   character(len=256),dimension(100) :: cosp_status
 
@@ -238,7 +239,7 @@ program cosp_test_v2
        gamma_2 = (/-1., -1.,      6.0,      6.0, -1., -1.,      6.0,      6.0,      6.0/),&
        gamma_3 = (/-1., -1.,      2.0,      2.0, -1., -1.,      2.0,      2.0,      2.0/),&
        gamma_4 = (/-1., -1.,      6.0,      6.0, -1., -1.,      6.0,      6.0,      6.0/)       
-
+  
   ! Fields used solely for output
   integer,parameter :: &
        n_out_list = 63,           & ! Number of possible output variables
@@ -248,15 +249,17 @@ program cosp_test_v2
   character(len=32),dimension(n_out_list) :: out_list  ! List of output variable names
   integer :: lon_axid,time_axid,height_axid,height_mlev_axid,grid_id,lonvar_id,       &
              latvar_id,column_axid,sza_axid,temp_axid,channel_axid,dbze_axid,sratio_axid,&
-             MISR_CTH_axid,lat_axid,tau_axid,pressure2_axid 
+             MISR_CTH_axid,lat_axid,tau_axid,pressure2_axid,stat
   type(var1d) :: v1d(N1D+1) ! Structures needed by output routines for 1D variables
   type(var2d) :: v2d(N2D)   ! Structures needed by output routines for 2D variables
   type(var3d) :: v3d(N3D)   ! Structures needed by output routines for 3D variables
   double precision :: time,time_bnds(2),time_step,half_time_step
   real(wp),dimension(:),allocatable :: mgrid_z,mgrid_zu,mgrid_zl
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-  call cpu_time(driver_time(1))
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  call getarg(1,nDayTestString)
+  call str2int(trim(nDayTestString),nDayTest,stat)
+  
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   ! Read in namelists
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -286,243 +289,181 @@ program cosp_test_v2
            mr_ozone(Npoints,Nlevels),u_wind(Npoints),v_wind(Npoints),sunlit(Npoints),    &
            frac_out(Npoints,Ncolumns,Nlevels))
 
+  ! This sample input data is ordered from surface-2-TOA (ie nlev=1 corresponds to surface
+  ! whereas nlev=nlev is the TOA). So it is flipped prior to being passed into COSP.
   fileIN = trim(dinput)//trim(finput)
   call nc_read_input_file(fileIN,Npoints,Nlevels,N_HYDRO,lon,lat,p,ph,zlev,zlev_half,    &
                           T,sh,rh,tca,cca,mr_lsliq,mr_lsice,mr_ccliq,mr_ccice,fl_lsrain, &
                           fl_lssnow,fl_lsgrpl,fl_ccrain,fl_ccsnow,Reff,dtau_s,dtau_c,    &
                           dem_s,dem_c,skt,landmask,mr_ozone,u_wind,v_wind,sunlit,        &
                           emsfc_lw,geomode,Nlon,Nlat)
-  call cpu_time(driver_time(2))
-
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  !                 IF IMPLEMTING COSP IN GCM, HERE IS WHERE TO START!!!
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  ! Initialize COSP
-  !*This only needs to be done the first time that COSP is called.*
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-  ! Initialize quickbeam_optics, also if two-moment radar microphysics scheme is wanted...
-  if (cloudsat_micro_scheme == 'MMF_v3.5_two_moment')  then
-     ldouble = .true. 
-     lsingle = .false.
-  endif  
-
-  ! Initialize the distributional parameters for hydrometeors in radar simulator
-  call hydro_class_init(R_UNDEF,lsingle,ldouble,sd)
   
-  ! Initialize COSP simulator
-  call COSP_INIT(Npoints,Nlevels,cloudsat_radar_freq,cloudsat_k2,cloudsat_use_gas_abs,  &
-                 cloudsat_do_ray,isccp_topheight,isccp_topheight_direction,surface_radar,&
-                 rcfg_cloudsat,rttov_Nchannels,rttov_Channels,rttov_platform,           &
-                 rttov_satellite,rttov_instrument,use_vgrid,csat_vgrid,Nlvgrid,         &
-                 cloudsat_micro_scheme)
-  call cpu_time(driver_time(3))
-
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  ! Construct output derived type.
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  call construct_cosp_outputs(Lpctisccp,Lclisccp,Lboxptopisccp, Lboxtauisccp,Ltauisccp,  &
-                              Lcltisccp,Lmeantbisccp,Lmeantbclrisccp,Lalbisccp,LclMISR,  &
-                              Lcltmodis,Lclwmodis,Lclimodis,Lclhmodis,Lclmmodis,         &
-                              Lcllmodis,Ltautmodis,Ltauwmodis,Ltauimodis,Ltautlogmodis,  &
-                              Ltauwlogmodis,Ltauilogmodis,Lreffclwmodis,Lreffclimodis,   &
-                              Lpctmodis,Llwpmodis,Liwpmodis,Lclmodis,Latb532,            &
-                              LlidarBetaMol532,LcfadLidarsr532,Lclcalipso2,Lclcalipso,   &
-                              Lclhcalipso,Lcllcalipso,Lclmcalipso,Lcltcalipso,           &
-                              Lcltlidarradar,Lclcalipsoliq,Lclcalipsoice,Lclcalipsoun,   &
-                              Lclcalipsotmp,Lclcalipsotmpliq,Lclcalipsotmpice,           &
-                              Lclcalipsotmpun,Lcltcalipsoliq,Lcltcalipsoice,             &
-                              Lcltcalipsoun,Lclhcalipsoliq,Lclhcalipsoice,Lclhcalipsoun, &
-                              Lclmcalipsoliq,Lclmcalipsoice,Lclmcalipsoun,Lcllcalipsoliq,&
-                              Lcllcalipsoice,Lcllcalipsoun,LcfadDbze94,Ldbze94,          &
-                              Lparasolrefl,Ltbrttov,Npoints,Ncolumns,Nlevels,Nlvgrid,    &
-                              rttov_Nchannels,cospOUT)
-
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  ! Break COSP up into pieces and loop over each COSP 'chunk'.
-  ! nChunks = # Points to Process (nPoints) / # Points per COSP iteration (nPoints_it)
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  nChunks = nPoints/nPoints_it+1
-  if (nPoints .eq. nPoints_it) nChunks = 1
-  do iChunk=1,nChunks
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     ! Determine indices for "chunking" (again, if necessary)
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     if (nChunks .eq. 1) then
-        start_idx = 1
-        end_idx   = nPoints
-        nPtsPerIt = nPoints
-     else
-        start_idx = (iChunk-1)*nPoints_it+1
-        end_idx   = iChunk*nPoints_it
-        if (end_idx .gt. nPoints) end_idx=nPoints
-        nPtsPerIt = end_idx-start_idx+1
-     endif
-
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     ! Construct COSP input types
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     if (iChunk .eq. 1) then
-        call construct_cospIN(Nptsperit,nColumns,nLevels,cospIN)
-        call construct_cospstateIN(Nptsperit,nLevels,rttov_nChannels,cospstateIN)
-     endif
-     if (iChunk .eq. nChunks) then
-        call destroy_cospIN(cospIN)
-        call destroy_cospstateIN(cospstateIN)
-        call construct_cospIN(Nptsperit,nColumns,nLevels,cospIN)
-        call construct_cospstateIN(Nptsperit,nLevels,rttov_nChannels,cospstateIN)    
-     endif
-     call cpu_time(driver_time(4))
-
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     ! Populate input types with model fields.
-     ! Here the 3D sample model fields (temperature,pressure,etc...) are ordered from the
-     ! surface-2-TOA, whereas COSP expects all fields to be ordered from TOA-2-SFC. So the
-     ! vertical fields are flipped prior to storing to COSP input type.
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     cospstateIN%hgt_matrix           = zlev(start_idx:end_idx,Nlevels:1:-1)
-     cospstateIN%sunlit               = sunlit(start_idx:end_idx)
-     cospstateIN%skt                  = skt(start_idx:end_idx)
-     cospstateIN%land                 = landmask(start_idx:end_idx)
-     cospstateIN%qv                   = sh(start_idx:end_idx,Nlevels:1:-1) 
-     cospstateIN%at                   = T(start_idx:end_idx,Nlevels:1:-1) 
-     cospstateIN%pfull                = p(start_idx:end_idx,Nlevels:1:-1) 
-     cospstateIN%o3                   = mr_ozone(start_idx:end_idx,Nlevels:1:-1)*(amd/amO3)*1e6
-     cospstateIN%u_sfc                = u_wind(start_idx:end_idx)
-     cospstateIN%v_sfc                = v_wind(start_idx:end_idx)
-     cospstateIN%emis_sfc             = rttov_surfem
-     cospstateIN%zenang               = rttov_zenang
-     cospstateIN%lat                  = lat(start_idx:end_idx)
-     cospstateIN%lon                  = lon(start_idx:end_idx)
-     cospstateIN%month                = 2 ! This is needed by RTTOV only for the surface emissivity calculation.
-     cospstateIN%co2                  = co2*(amd/amCO2)*1e6
-     cospstateIN%ch4                  = ch4*(amd/amCH4)*1e6  
-     cospstateIN%n2o                  = n2o*(amd/amN2O)*1e6
-     cospstateIN%co                   = co*(amd/amCO)*1e6
-     cospstateIN%phalf(:,1)           = 0._wp
-     cospstateIN%phalf(:,2:Nlevels+1) = ph(start_idx:end_idx,Nlevels:1:-1)      
-     cospstateIN%hgt_matrix_half(:,1:Nlevels) = zlev_half(start_idx:end_idx,Nlevels:1:-1)
-     cospstateIN%hgt_matrix_half(:,Nlevels+1) = 0._wp  
-     cospIN%tautot_S_liq              = 0._wp
-     cospIN%tautot_S_ice              = 0._wp
-     cospIN%emsfc_lw                  = emsfc_lw
-     cospIN%rcfg_cloudsat             = rcfg_cloudsat
+  do iDay=1,nDayTest
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     !                 IF IMPLEMTING COSP IN GCM, HERE IS WHERE TO START!!!
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
      
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     ! Compute subcolumns and optical inputs to COSP in the same manner as in v1.4, call
-     ! subsample_and_optics.
+     ! Initialize COSP
+     !*This only needs to be done the first time that COSP is called.*
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     call subsample_and_optics(nPtsPerIt,nLevels,nColumns,N_HYDRO,overlap,                     &
-          use_precipitation_fluxes,lidar_ice_type,sd,                                          &
-          tca(start_idx:end_idx,Nlevels:1:-1),cca(start_idx:end_idx,Nlevels:1:-1),             &
-          fl_lsrain(start_idx:end_idx,Nlevels:1:-1),fl_lssnow(start_idx:end_idx,Nlevels:1:-1), &
-          fl_lsgrpl(start_idx:end_idx,Nlevels:1:-1),fl_ccrain(start_idx:end_idx,Nlevels:1:-1), &
-          fl_ccsnow(start_idx:end_idx,Nlevels:1:-1),mr_lsliq(start_idx:end_idx,Nlevels:1:-1),  &
-          mr_lsice(start_idx:end_idx,Nlevels:1:-1),mr_ccliq(start_idx:end_idx,Nlevels:1:-1),   &
-          mr_ccice(start_idx:end_idx,Nlevels:1:-1),Reff(start_idx:end_idx,Nlevels:1:-1,:),     &
-          dtau_c(start_idx:end_idx,nLevels:1:-1),dtau_s(start_idx:end_idx,nLevels:1:-1),       &
-          dem_c(start_idx:end_idx,nLevels:1:-1),dem_s(start_idx:end_idx,nLevels:1:-1),         &
-          cospstateIN,cospIN)
+     if (iDay .eq. 1) then
+        ! Initialize quickbeam_optics, also if two-moment radar microphysics scheme is wanted...
+        if (cloudsat_micro_scheme == 'MMF_v3.5_two_moment')  then
+           ldouble = .true. 
+           lsingle = .false.
+        endif
+        
+        ! Initialize the distributional parameters for hydrometeors in radar simulator
+        call hydro_class_init(R_UNDEF,lsingle,ldouble,sd)
+        
+        ! Initialize COSP simulator
+        call COSP_INIT(Npoints,Nlevels,cloudsat_radar_freq,cloudsat_k2,cloudsat_use_gas_abs,  &
+                       cloudsat_do_ray,isccp_topheight,isccp_topheight_direction,surface_radar,&
+                       rcfg_cloudsat,rttov_Nchannels,rttov_Channels,rttov_platform,           &
+                       rttov_satellite,rttov_instrument,use_vgrid,csat_vgrid,Nlvgrid,         &
+                       cloudsat_micro_scheme)
+     endif
 
-     call cpu_time(driver_time(6))
-     
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     ! Call COSP
+     ! Construct output derived type.
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     cosp_status = COSP_SIMULATOR(cospIN, cospstateIN, cospOUT,start_idx,end_idx,.false.)
-     
-     call cpu_time(driver_time(7))
+     call construct_cosp_outputs(Lpctisccp,Lclisccp,Lboxptopisccp, Lboxtauisccp,Ltauisccp,  &
+                                 Lcltisccp,Lmeantbisccp,Lmeantbclrisccp,Lalbisccp,LclMISR,  &
+                                 Lcltmodis,Lclwmodis,Lclimodis,Lclhmodis,Lclmmodis,         &
+                                 Lcllmodis,Ltautmodis,Ltauwmodis,Ltauimodis,Ltautlogmodis,  &
+                                 Ltauwlogmodis,Ltauilogmodis,Lreffclwmodis,Lreffclimodis,   &
+                                 Lpctmodis,Llwpmodis,Liwpmodis,Lclmodis,Latb532,            &
+                                 LlidarBetaMol532,LcfadLidarsr532,Lclcalipso2,Lclcalipso,   &
+                                 Lclhcalipso,Lcllcalipso,Lclmcalipso,Lcltcalipso,           &
+                                 Lcltlidarradar,Lclcalipsoliq,Lclcalipsoice,Lclcalipsoun,   &
+                                 Lclcalipsotmp,Lclcalipsotmpliq,Lclcalipsotmpice,           &
+                                 Lclcalipsotmpun,Lcltcalipsoliq,Lcltcalipsoice,             &
+                                 Lcltcalipsoun,Lclhcalipsoliq,Lclhcalipsoice,Lclhcalipsoun, &
+                                 Lclmcalipsoliq,Lclmcalipsoice,Lclmcalipsoun,Lcllcalipsoliq,&
+                                 Lcllcalipsoice,Lcllcalipsoun,LcfadDbze94,Ldbze94,          &
+                                 Lparasolrefl,Ltbrttov,Npoints,Ncolumns,Nlevels,Nlvgrid,    &
+                                 rttov_Nchannels,cospOUT)
+
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     ! Break COSP up into pieces and loop over each COSP 'chunk'.
+     ! nChunks = # Points to Process (nPoints) / # Points per COSP iteration (nPoints_it)
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     call cpu_time(driver_time(1))
+     nChunks = nPoints/nPoints_it+1
+     if (nPoints .eq. nPoints_it) nChunks = 1
+     do iChunk=1,nChunks
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        ! Determine indices for "chunking" (again, if necessary)
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        if (nChunks .eq. 1) then
+           start_idx = 1
+           end_idx   = nPoints
+           nPtsPerIt = nPoints
+        else
+           start_idx = (iChunk-1)*nPoints_it+1
+           end_idx   = iChunk*nPoints_it
+           if (end_idx .gt. nPoints) end_idx=nPoints
+           nPtsPerIt = end_idx-start_idx+1
+        endif
+        
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        ! Construct COSP input types
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        if (iChunk .eq. 1) then
+           call construct_cospIN(Nptsperit,nColumns,nLevels,cospIN)
+           call construct_cospstateIN(Nptsperit,nLevels,rttov_nChannels,cospstateIN)
+        endif
+        if (iChunk .eq. nChunks) then
+           call destroy_cospIN(cospIN)
+           call destroy_cospstateIN(cospstateIN)
+           call construct_cospIN(Nptsperit,nColumns,nLevels,cospIN)
+           call construct_cospstateIN(Nptsperit,nLevels,rttov_nChannels,cospstateIN)    
+        endif
+
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        ! Populate input types with model fields.
+        ! Here the 3D sample model fields (temperature,pressure,etc...) are ordered from the
+        ! surface-2-TOA, whereas COSP expects all fields to be ordered from TOA-2-SFC. So the
+        ! vertical fields are flipped prior to storing to COSP input type.
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        cospstateIN%hgt_matrix           = zlev(start_idx:end_idx,Nlevels:1:-1)
+        cospstateIN%sunlit               = sunlit(start_idx:end_idx)
+        cospstateIN%skt                  = skt(start_idx:end_idx)
+        cospstateIN%land                 = landmask(start_idx:end_idx)
+        cospstateIN%qv                   = sh(start_idx:end_idx,Nlevels:1:-1) 
+        cospstateIN%at                   = T(start_idx:end_idx,Nlevels:1:-1) 
+        cospstateIN%pfull                = p(start_idx:end_idx,Nlevels:1:-1) 
+        cospstateIN%o3                   = mr_ozone(start_idx:end_idx,Nlevels:1:-1)*(amd/amO3)*1e6
+        cospstateIN%u_sfc                = u_wind(start_idx:end_idx)
+        cospstateIN%v_sfc                = v_wind(start_idx:end_idx)
+        cospstateIN%emis_sfc             = rttov_surfem
+        cospstateIN%zenang               = rttov_zenang
+        cospstateIN%lat                  = lat(start_idx:end_idx)
+        cospstateIN%lon                  = lon(start_idx:end_idx)
+        cospstateIN%month                = 2 ! This is needed by RTTOV only for the surface emissivity calculation.
+        cospstateIN%co2                  = co2*(amd/amCO2)*1e6
+        cospstateIN%ch4                  = ch4*(amd/amCH4)*1e6  
+        cospstateIN%n2o                  = n2o*(amd/amN2O)*1e6
+        cospstateIN%co                   = co*(amd/amCO)*1e6
+        cospstateIN%phalf(:,1)           = 0._wp
+        cospstateIN%phalf(:,2:Nlevels+1) = ph(start_idx:end_idx,Nlevels:1:-1)      
+        cospstateIN%hgt_matrix_half(:,1:Nlevels) = zlev_half(start_idx:end_idx,Nlevels:1:-1)
+        cospstateIN%hgt_matrix_half(:,Nlevels+1) = 0._wp  
+        cospIN%tautot_S_liq              = 0._wp
+        cospIN%tautot_S_ice              = 0._wp
+        cospIN%emsfc_lw                  = emsfc_lw
+        cospIN%rcfg_cloudsat             = rcfg_cloudsat
+        
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        ! Compute subcolumns and optical inputs to COSP in the same manner as in v1.4, call
+        ! subsample_and_optics.
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        call subsample_and_optics(nPtsPerIt,nLevels,nColumns,N_HYDRO,overlap,                     &
+             use_precipitation_fluxes,lidar_ice_type,sd,                                          &
+             tca(start_idx:end_idx,Nlevels:1:-1),cca(start_idx:end_idx,Nlevels:1:-1),             &
+             fl_lsrain(start_idx:end_idx,Nlevels:1:-1),fl_lssnow(start_idx:end_idx,Nlevels:1:-1), &
+             fl_lsgrpl(start_idx:end_idx,Nlevels:1:-1),fl_ccrain(start_idx:end_idx,Nlevels:1:-1), &
+             fl_ccsnow(start_idx:end_idx,Nlevels:1:-1),mr_lsliq(start_idx:end_idx,Nlevels:1:-1),  &
+             mr_lsice(start_idx:end_idx,Nlevels:1:-1),mr_ccliq(start_idx:end_idx,Nlevels:1:-1),   &
+             mr_ccice(start_idx:end_idx,Nlevels:1:-1),Reff(start_idx:end_idx,Nlevels:1:-1,:),     &
+             dtau_c(start_idx:end_idx,nLevels:1:-1),dtau_s(start_idx:end_idx,nLevels:1:-1),       &
+             dem_c(start_idx:end_idx,nLevels:1:-1),dem_s(start_idx:end_idx,nLevels:1:-1),         &
+             cospstateIN,cospIN)
+             
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        ! Call COSP
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        cosp_status = COSP_SIMULATOR(cospIN, cospstateIN, cospOUT,start_idx,end_idx,.false.)
+
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        ! Free up memory
+        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        if (iChunk .eq. nChunks) then
+           call destroy_cosp_outputs(cospOUT)
+           call destroy_cospIN(cospIN)
+           call destroy_cospstateIN(cospstateIN)
+        endif
+     enddo
+     call cpu_time(driver_time(2))
+     print*,'Time to run COSP:         ',driver_time(2)-driver_time(1)
+
   enddo
-  print*,'Time to read in data:     ',driver_time(2)-driver_time(1)
-  print*,'Time to initialize:       ',driver_time(3)-driver_time(2)
-  print*,'Time to construct types:  ',driver_time(4)-driver_time(3)
-  print*,'Time to compute optics:   ',driver_time(6)-driver_time(4)
-  print*,'Time to run COSP:         ',driver_time(7)-driver_time(6)
-  print*,'Total time:               ',driver_time(7)-driver_time(1)
-
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  ! Output
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  ! Create list of output varibles.
-  call construct_cospOutList(Lpctisccp,Lclisccp,Lboxptopisccp, Lboxtauisccp,Ltauisccp,   &
-                             Lcltisccp,Lmeantbisccp,Lmeantbclrisccp,Lalbisccp,LclMISR,   &
-                             Lcltmodis,Lclwmodis,Lclimodis,Lclhmodis,Lclmmodis,          &
-                             Lcllmodis,Ltautmodis,Ltauwmodis,Ltauimodis,Ltautlogmodis,   &
-                             Ltauwlogmodis,Ltauilogmodis,Lreffclwmodis,Lreffclimodis,    &
-                             Lpctmodis,Llwpmodis,Liwpmodis,Lclmodis,Latb532,             &
-                             LlidarBetaMol532,LcfadLidarsr532,Lclcalipso2,Lclcalipso,    &
-                             Lclhcalipso,Lcllcalipso,Lclmcalipso,Lcltcalipso,            &
-                             Lcltlidarradar,Lclcalipsoliq,Lclcalipsoice,Lclcalipsoun,    &
-                             Lclcalipsotmp,Lclcalipsotmpliq,Lclcalipsotmpice,            &
-                             Lclcalipsotmpun,Lcltcalipsoliq,Lcltcalipsoice,              &
-                             Lcltcalipsoun,Lclhcalipsoliq,Lclhcalipsoice,Lclhcalipsoun,  &
-                             Lclmcalipsoliq,Lclmcalipsoice,Lclmcalipsoun,Lcllcalipsoliq, &
-                             Lcllcalipsoice,Lcllcalipsoun,LcfadDbze94,Ldbze94,           &
-                             Lparasolrefl,Ltbrttov,N_OUT_LIST,out_list)  
-
-  ! Time information for cmor output.
-  time           = 8*1._wp/8._wp
-  time_step      = 3._wp/24._wp
-  half_time_step = 0.5_wp*time_step
-  time_bnds      = (/time-half_time_step,time+half_time_step/)
-
-  ! Model grid info for cmor output
-  allocate(mgrid_z(Nlevels),mgrid_zl(Nlevels),mgrid_zu(Nlevels))
-  mgrid_z             = cospstateIN%hgt_matrix(1,:)
-  mgrid_zl            = cospstateIN%hgt_matrix_half(1,:)
-  mgrid_zu(2:Nlevels) = cospstateIN%hgt_matrix_half(1,1:Nlevels-1)
-  mgrid_zu(1)         = cospstateIN%hgt_matrix(1,1)+(cospstateIN%hgt_matrix(1,1)-mgrid_zl(1))
   
-  if (geomode .eq. 1) then
-     call nc_cmor_init('../cmor/cosp_cmor_nl_1D.txt','replace',nPoints,nColumns,nLevels, &
-                       rttov_nChannels,nLvgrid,lon,lat,mgrid_zl,mgrid_zu,mgrid_z,cospOUT,&
-                       geomode,Nlon,Nlat,N1D+1,N2D,N3D,N_OUT_LIST,out_list,lon_axid,     &
-                       lat_axid,time_axid,height_axid,height_mlev_axid,grid_id,lonvar_id,&
-                       latvar_id,column_axid,sza_axid,temp_axid,channel_axid,dbze_axid,  &
-                       sratio_axid,MISR_CTH_axid,tau_axid,pressure2_axid,v1d(1:N1D+1),   &
-                       v2d,v3d)
-     call nc_cmor_associate_1d(grid_id,time_axid,height_axid,height_mlev_axid,           &
-                               column_axid,sza_axid,temp_axid,channel_axid,dbze_axid,    &
-                               sratio_axid,MISR_CTH_axid,tau_axid,pressure2_axid,Nlon,   &
-                               Nlat,nPoints,nColumns,nLevels,rttov_nChannels,nLvgrid,    &
-                               cospOUT,N1D+1,N2D,N3D,v1d,v2d,v3d)
-     call nc_cmor_write_1d(nPoints,lon,lat,time_bnds,lonvar_id,latvar_id,N1D+1,N2D,N3D,  &
-                           v1d(1:N1D+1),v2d,v3d)
-  endif
-  if (geomode .gt. 1) then
-     call nc_cmor_init('../cmor/cosp_cmor_nl_2D.txt','replace',nPoints,nColumns,nLevels, &
-                       rttov_nChannels,nLvgrid,lon,lat,mgrid_zl,mgrid_zu,mgrid_z,cospOUT,&
-                       geomode,Nlon,Nlat,N1D,N2D,N3D,N_OUT_LIST,out_list,lon_axid,       &
-                       lat_axid,time_axid,height_axid,height_mlev_axid,grid_id,lonvar_id,&
-                       latvar_id,column_axid,sza_axid,temp_axid,channel_axid,dbze_axid,  &
-                       sratio_axid,MISR_CTH_axid,tau_axid,pressure2_axid,v1d(1:N1D),v2d, &
-                       v3d)
-     call nc_cmor_associate_2d(lon_axid,lat_axid,time_axid,height_axid,height_mlev_axid, &
-                               column_axid,sza_axid,temp_axid,channel_axid,dbze_axid,    &
-                               sratio_axid,MISR_CTH_axid,tau_axid,pressure2_axid,Nlon,   &
-                               Nlat,nPoints,nColumns,nLevels,rttov_nChannels,nLvgrid,    &
-                               cospOUT,N1D,N2D,N3D,v1d(1:N1D),v2d,v3d)
-     call nc_cmor_write_2d(time_bnds,geomode,Nlon,Nlat,N1D,N2D,N3D,v1d(1:N1D),v2d,v3d)
-  endif
-  deallocate(mgrid_z,mgrid_zu,mgrid_zl)
-  call nc_cmor_close()
-  call cpu_time(driver_time(8))
-  print*,'Time to write to output:  ',driver_time(8)-driver_time(7)
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+  ! Free up local memory
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+  deallocate(lon,lat,p,ph,zlev,zlev_half,T,sh,rh,tca,cca, mr_lsliq,mr_lsice,mr_ccliq,    &
+             mr_ccice,fl_lsrain,fl_lssnow,fl_lsgrpl,fl_ccrain,fl_ccsnow,Reff,dtau_s,     &
+             dtau_c,dem_s,dem_c,skt,landmask,mr_ozone,u_wind,v_wind,sunlit)
 
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  ! Free up memory
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  call destroy_cosp_outputs(cospOUT)
-  call destroy_cospIN(cospIN)
-  call destroy_cospstateIN(cospstateIN)
+  
 contains
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
   ! SUBROUTINE subsample_and_optics
@@ -612,6 +553,12 @@ contains
                 if (frac_prec(j,i,nLevels+1-k) .eq. 2)  prec_cv(j,k) = prec_cv(j,k)+1._wp
                 if (frac_prec(j,i,nLevels+1-k) .eq. 3)  prec_cv(j,k) = prec_cv(j,k)+1._wp
                 if (frac_prec(j,i,nLevels+1-k) .eq. 3)  prec_ls(j,k) = prec_ls(j,k)+1._wp
+                !if (cospIN%frac_out(j,i,k)  .eq. 1)  frac_ls(j,k) = frac_ls(j,k)+1._wp
+                !if (cospIN%frac_out(j,i,k)  .eq. 2)  frac_cv(j,k) = frac_cv(j,k)+1._wp
+                !if (frac_prec(j,i,k) .eq. 1)  prec_ls(j,k) = prec_ls(j,k)+1._wp
+                !if (frac_prec(j,i,k) .eq. 2)  prec_cv(j,k) = prec_cv(j,k)+1._wp
+                !if (frac_prec(j,i,k) .eq. 3)  prec_cv(j,k) = prec_cv(j,k)+1._wp
+                !if (frac_prec(j,i,k) .eq. 3)  prec_ls(j,k) = prec_ls(j,k)+1._wp
              enddo
              frac_ls(j,k)=frac_ls(j,k)/nColumns
              frac_cv(j,k)=frac_cv(j,k)/nColumns
@@ -673,7 +620,7 @@ contains
              Np(:,k,:,I_CVSNOW)   = 0._wp! Should be inputs
           end where
        enddo
-       
+
        !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
        ! Convert the mixing ratio and precipitation fluxes from gridbox mean to
        ! the fraction-based values
@@ -767,7 +714,6 @@ contains
                fl_lsgrpl,mr_hydro(:,:,:,I_LSGRPL),Reff(:,:,:,I_LSGRPL))
           deallocate(frac_prec)
        endif
-
     else
        cospIN%frac_out(:,:,:) = 1  
        allocate(mr_hydro(nPoints, 1,nLevels,nHydro),Reff(nPoints,1,nLevels,nHydro),  &
@@ -813,8 +759,8 @@ contains
     ! CLOUDSAT RADAR OPTICS
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     allocate(hm_matrix(nHydro,nPoints,nLevels),re_matrix(nHydro,nPoints,nLevels),          &
-             Np_matrix(nHydro,nPoints,nLevels))           
-    
+         Np_matrix(nHydro,nPoints,nLevels))
+
     ! Loop over all subcolumns
     do k=1,nColumns
        do i=1,nHydro
@@ -829,7 +775,7 @@ contains
             cospIN%g_vol_cloudsat(1:nPoints,k,:))
     enddo
     deallocate(hm_matrix,re_matrix,Np_matrix)
-    
+
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ! MODIS optics
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -872,5 +818,14 @@ contains
                Np,Reff)
 
   end subroutine subsample_and_optics
+  elemental subroutine str2int(str,int,stat)
+    implicit none
+    ! Arguments
+    character(len=*),intent(in) :: str
+    integer,intent(out)         :: int
+    integer,intent(out)         :: stat
+    
+    read(str,*,iostat=stat)  int
+  end subroutine str2int
 end program cosp_test_v2
 

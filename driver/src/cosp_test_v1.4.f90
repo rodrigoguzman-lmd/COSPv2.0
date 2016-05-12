@@ -93,7 +93,9 @@ PROGRAM COSPTEST_trunk
   type(cosp_rttov)      :: rttov   ! Output from RTTOV 
   type(cosp_radarstats) :: stradar ! Summary statistics from radar simulator
   type(cosp_lidarstats) :: stlidar ! Summary statistics from lidar simulator
-  
+  integer :: nDayTest,iDay,stat
+  character(len=64) :: nDayTestString
+
   ! Sample input data variables
   integer :: &
        Nlon,Nlat,geomode,k
@@ -186,8 +188,9 @@ PROGRAM COSPTEST_trunk
                       Nprmts_max_hydro,Naero,Nprmts_max_aero,lidar_ice_type,     &
                       use_precipitation_fluxes,use_reff,platform,satellite,      &
                       Instrument,Nchannels,Channels,Surfem,ZenAng,co2,ch4,n2o,co
-  ! Start timer
-  call cpu_time(driver_time(1))
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  call getarg(1,nDayTestString)
+  call str2int(trim(nDayTestString),nDayTest,stat)
   
   ! Initialization switch. Set to false after cosp_init is called.
   linitialization = .true.
@@ -235,24 +238,24 @@ PROGRAM COSPTEST_trunk
   time_step      = 3._wp/24._wp
   half_time_step = 0.5_wp*time_step
   time_bnds      = (/time-half_time_step,time+half_time_step/) 
-  call cpu_time(driver_time(2))
 
-  do i=1,Nfiles
-     dfinput=trim(dinput)//trim(finput(i))
-     time_bnds = (/time-half_time_step,time+half_time_step/) ! This may need to be adjusted, 
-                                                             ! depending on the approx_interval in the MIP table
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     ! Read input geophysical variables from NetCDF file
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     call nc_read_input_file(dfinput,Npoints,Nlevels,N_HYDRO,lon,lat,p,ph,zlev,zlev_half,&
-                             T,sh,rh,tca,cca,mr_lsliq,mr_lsice,mr_ccliq,mr_ccice,        &
-                             fl_lsrain,fl_lssnow,fl_lsgrpl,fl_ccrain,fl_ccsnow,Reff,     &
-                             dtau_s,dtau_c,dem_s,dem_c,skt,landmask,mr_ozone,u_wind,     &
-                             v_wind,sunlit,emsfc_lw,geomode,Nlon,Nlat)
-     ! geomode = 2 for (lon,lat) mode.
-     ! geomode = 3 for (lat,lon) mode.
-     ! In those modes it returns Nlon and Nlat with the correct values
+  dfinput=trim(dinput)//trim(finput(1))
+  time_bnds = (/time-half_time_step,time+half_time_step/) ! This may need to be adjusted, 
+                                                          ! depending on the approx_interval in the MIP table
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  ! Read input geophysical variables from NetCDF file
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  call nc_read_input_file(dfinput,Npoints,Nlevels,N_HYDRO,lon,lat,p,ph,zlev,zlev_half,&
+                          T,sh,rh,tca,cca,mr_lsliq,mr_lsice,mr_ccliq,mr_ccice,        &
+                          fl_lsrain,fl_lssnow,fl_lsgrpl,fl_ccrain,fl_ccsnow,Reff,     &
+                          dtau_s,dtau_c,dem_s,dem_c,skt,landmask,mr_ozone,u_wind,     &
+                          v_wind,sunlit,emsfc_lw,geomode,Nlon,Nlat)
 
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  ! Loop over some number days, nDayTest set up above, to check for memory issues with
+  ! inline call of COSP.
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
+  do iDay=1,nDayTest
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
      ! Allocate memory for gridbox type
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
@@ -305,12 +308,12 @@ PROGRAM COSPTEST_trunk
      ! Define new vertical grid
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
      call construct_cosp_vgrid(gbx,Nlvgrid,use_vgrid,csat_vgrid,vgrid)
-  
+     
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
      ! Subgrid information
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
      call construct_cosp_subgrid(Npoints, Ncolumns, Nlevels, sgx)
-
+     
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
      ! Allocate memory for other types.
      ! *NOTE* These construct subroutines are different than the original construct 
@@ -333,62 +336,14 @@ PROGRAM COSPTEST_trunk
      if (cfg%Lmodis_sim) call construct_cosp_modis(Npoints,modis)
      if (cfg%Lmisr_sim)  call construct_cosp_misr(Npoints,misr)
      if (cfg%Lrttov_sim) call construct_cosp_rttov(Npoints,Nchannels,rttov)
-
+     
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
      ! Call simulator
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+     call cpu_time(driver_time(2))
      call cosp(overlap,Ncolumns,cfg,vgrid,gbx,sgx,sgradar,sglidar,isccp,misr,modis,rttov,&
-               stradar,stlidar)
+          stradar,stlidar)
      call cpu_time(driver_time(3))
-
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     ! Write outputs to CMOR-compliant netCDF format.
-     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-     if (cfg%Lwrite_output) then
-
-       ! Model grid info for cmor output
-        allocate(mgrid_z(Nlevels),mgrid_zl(Nlevels),mgrid_zu(Nlevels))
-        mgrid_z             = zlev(1,Nlevels:1:-1)
-        mgrid_zl            = zlev_half(1,Nlevels:1:-1)
-        mgrid_zu(2:Nlevels) = zlev_half(1,Nlevels:2:-1)
-        mgrid_zu(1)         = zlev(1,Nlevels)+(zlev(1,Nlevels)-mgrid_zl(Nlevels))
-        
-        N1 = N1D
-        if (geomode == 1) N1 = N1D+1
-        if (i .eq. 1) then
-           call nc_cmor_init(cmor_nl,'replace',cfg,vgrid,gbx,sgx,sglidar,isccp,misr,     &
-                             modis,rttov,sgradar,stradar,stlidar,geomode,Nlon,Nlat,N1,   &
-                             N2D,N3D,N_OUT_LIST,mgrid_zl,mgrid_zu,mgrid_z,lon_axid,      &
-                             lat_axid,time_axid,height_axid, &
-                             height_mlev_axid,grid_id,lonvar_id,latvar_id,column_axid,   &
-                             sza_axid,temp_axid,channel_axid,dbze_axid,sratio_axid,      &
-                             MISR_CTH_axid,tau_axid,pressure2_axid,v1d(1:N1),v2d,v3d)
-        endif
-        if (geomode == 1) then
-           call nc_cmor_associate_1d(grid_id,time_axid,height_axid,height_mlev_axid,     &
-                                     column_axid,sza_axid,temp_axid,channel_axid,        &
-                                     dbze_axid,sratio_axid,MISR_CTH_axid,tau_axid,       &
-                                     pressure2_axid,Nlon,Nlat,vgrid,gbx,sgx,sglidar,     &
-                                     isccp,misr,modis,rttov,sgradar,stradar,stlidar,     &
-                                     N1D,N2D,N3D,v1d(1:N1),v2d,v3d)
-           call nc_cmor_write_1d(gbx,time_bnds,lonvar_id,latvar_id,N1,N2D,N3D,v1d(1:N1),v2d, &
-                                 v3d)
-        elseif (geomode >  1) then
-           call nc_cmor_associate_2d(lon_axid,lat_axid,time_axid,height_axid,            &
-                                     height_mlev_axid,column_axid,sza_axid,temp_axid,    &
-                                     channel_axid,dbze_axid,sratio_axid,MISR_CTH_axid,   &
-                                     tau_axid,pressure2_axid,Nlon,Nlat,vgrid,gbx,sgx,    &
-                                     sglidar,isccp,misr,modis,rttov,sgradar,stradar,     &
-                                     stlidar,N1D,N2D,N3D,v1d(1:N1),v2d,v3d)
-           call nc_cmor_write_2d(time,time_bnds,geomode,Nlon,Nlat,N1,N2D,N3D,v1d(1:N1),  &
-                                 v2d,v3d)
-        endif
-        if (i .eq. Nfiles) then
-           call nc_cmor_close()
-        endif
-        deallocate(mgrid_zl,mgrid_zu,mgrid_z)
-     endif
-     call cpu_time(driver_time(4))
 
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
      ! Deallocate memory in derived types
@@ -405,21 +360,27 @@ PROGRAM COSPTEST_trunk
      if (cfg%Lmodis_sim) call free_cosp_modis(modis)
      if (cfg%Lrttov_sim) call free_cosp_rttov(rttov)
 
-  enddo
-
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+     ! Driver timing
+     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+     call cpu_time(driver_time(5))
+     print*,'Time to run COSP:         ',driver_time(3)-driver_time(2)     
+  enddo ! End loop over nDayTest
+  
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
   ! Free up local memory
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
   deallocate(lon,lat,p,ph,zlev,zlev_half,T,sh,rh,tca,cca, mr_lsliq,mr_lsice,mr_ccliq,    &
              mr_ccice,fl_lsrain,fl_lssnow,fl_lsgrpl,fl_ccrain,fl_ccsnow,Reff,dtau_s,     &
              dtau_c,dem_s,dem_c,skt,landmask,mr_ozone,u_wind,v_wind,sunlit)
-
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
-  ! Driver timing
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
-  call cpu_time(driver_time(5))
-  print*,'Time to read in data:     ',driver_time(2)-driver_time(1)
-  print*,'Time to run COSP:         ',driver_time(3)-driver_time(2)
-  print*,'Time to write output:     ',driver_time(4)-driver_time(3)
-  print*,'Total time to run driver: ',driver_time(5)-driver_time(1)
+contains
+  elemental subroutine str2int(str,int,stat)
+    implicit none
+    ! Arguments
+    character(len=*),intent(in) :: str
+    integer,intent(out)         :: int
+    integer,intent(out)         :: stat
+    
+    read(str,*,iostat=stat)  int
+  end subroutine str2int
 END PROGRAM COSPTEST_trunk
