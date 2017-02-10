@@ -33,7 +33,7 @@
 module mod_quickbeam_optics
   USE COSP_KINDS,          ONLY: wp,dp
   USE array_lib,           ONLY: infind
-  USE math_lib,            ONLY: path_integral,avint,gamma
+  USE math_lib,            ONLY: path_integral,avint!,gamma
   USE optics_lib,          ONLY: m_wat,m_ice,MieInt
   USE cosp_math_constants, ONLY: pi
   USE cosp_phys_constants, ONLY: rhoice  

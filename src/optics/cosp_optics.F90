@@ -125,8 +125,8 @@ contains
   ! profile, cloud-ice and cloud-water are provided. In this case, the optical
   ! depth is partitioned by phase.
   ! ##############################################################################
-  subroutine MODIS_OPTICS_PARTITION(npoints,nlev,ncolumns,cloudWater,cloudIce,waterSize, &
-                                    iceSize,tau,tauL,tauI)
+  subroutine MODIS_OPTICS_PARTITION(npoints,nlev,ncolumns,cloudWater,cloudIce,cloudSnow,&
+       waterSize,iceSize,snowSize,tau,tauL,tauI,tauS)
     ! INPUTS
     INTEGER,intent(in) :: &
          npoints,   & ! Number of horizontal gridpoints
@@ -135,33 +135,55 @@ contains
     REAL(wp),intent(in),dimension(npoints,nlev,ncolumns) :: &
          cloudWater, & ! Subcolumn cloud water content
          cloudIce,   & ! Subcolumn cloud ice content
+         cloudSnow,  & ! Subcolumn cloud snow content
          waterSize,  & ! Subcolumn cloud water effective radius
          iceSize,    & ! Subcolumn cloud ice effective radius
+         snowSize,   & ! Subcolumn cloud snow effective radius
          tau           ! Optical thickness
     
     ! OUTPUTS
     real(wp),intent(out),dimension(npoints,nlev,ncolumns) :: &
          tauL,       & ! Partitioned liquid optical thickness.
-         tauI          ! Partitioned ice optical thickness.
+         tauI,       & ! Partitioned ice optical thickness.
+         tauS          ! Partitioned snow optical thickness.
+
     ! LOCAL VARIABLES
-    real(wp),dimension(nlev,ncolumns) :: fracL
+    real(wp),dimension(nlev,ncolumns) :: totalExtinction
     integer                           :: i
     
-    
     do i=1,npoints
-       where(cloudIce(i,:, :) <= 0.) 
-          fracL(:, :) = 1._wp
+       where(waterSize(i,:,:) > 0.) 
+          totalExtinction(:,:) = cloudWater(i,:,:)/waterSize(i,:,:)
        elsewhere
-          where (cloudWater(i,:, :) <= 0.) 
-             fracL(:, :) = 0._wp
-          elsewhere 
-             ! Geometic optics limit - tau as LWP/re  (proportional to LWC/re) 
-             fracL(:, :) = (cloudWater(i,:, :)/waterSize(i,:, :)) / &
-                  (cloudWater(i,:, :)/waterSize(i,:, :) + cloudIce(i,:, :)/(ice_density * iceSize(i,:, :)) ) 
-          end where
+          totalExtinction(:,:) = 0. 
        end where
-       tauL(i,:, :) = fracL(:, :) * tau(i,:, :) 
-       tauI(i,:, :) = tau(i,:, :) - tauL(i,:, :)
+       
+       where(iceSize(i,:,:) > 0.) &
+            totalExtinction(:,:) = totalExtinction(:,:) + cloudIce(i,:,:)/(ice_density * iceSize(i,:,:))
+       where(snowSize(i,:,:) > 0.) &
+            totalExtinction(:,:) = totalExtinction(:,:) + cloudSnow(i,:,:)/(ice_density * snowSize(i,:,:))
+       
+       where((waterSize(i,:, :) > 0.) .and. (totalExtinction(:,:) > 0.))
+          tauL(i,:,:) = tau(i,:,:) * cloudWater(i,:,:) / &
+               (              waterSize(i,:,:) * totalExtinction(:,:))
+       elsewhere
+          tauL(i,:,:) = 0. 
+       end where
+       
+       where(  (iceSize(i,:,:) > 0.) .and. (totalExtinction(:,:) > 0.))
+          tauI(i,:,:) = tau(i,:,:) * cloudIce(i,:,:) / &
+               (ice_density *   iceSize(i,:,:) * totalExtinction(:,:))
+       elsewhere
+          tauI(i,:,:) = 0. 
+       end where
+       
+       where( (snowSize(i,:,:) > 0.) .and. (totalExtinction(:,:) > 0.))
+          tauS(i,:,:) = tau(i,:,:) * cloudSnow(i,:,:) / &
+               (ice_density *  snowSize(i,:,:) * totalExtinction(:,:))
+       elsewhere
+          tauS(i,:,:) = 0. 
+       end where
+       
     enddo
     
   end subroutine MODIS_OPTICS_PARTITION
@@ -170,14 +192,14 @@ contains
   ! 
   ! ########################################################################################
   subroutine modis_optics(nPoints,nLevels,nSubCols,num_trial_res,tauLIQ,sizeLIQ,tauICE,sizeICE,&
-                          fracLIQ, g, w0)
+                          tauSNOW,sizeSNOW,fracLIQ, g, w0)
     ! INPUTS
     integer, intent(in)                                      :: nPoints,nLevels,nSubCols,num_trial_res
-    real(wp),intent(in),dimension(nPoints,nSubCols,nLevels)  :: tauLIQ, sizeLIQ, tauICE, sizeICE
+    real(wp),intent(in),dimension(nPoints,nSubCols,nLevels)  :: tauLIQ, sizeLIQ, tauICE, sizeICE,tauSNOW,sizeSNOW
     ! OUTPUTS
     real(wp),intent(out),dimension(nPoints,nSubCols,nLevels) :: g,w0,fracLIQ
     ! LOCAL VARIABLES
-    real(wp), dimension(nLevels)            :: water_g, water_w0, ice_g, ice_w0,tau
+    real(wp), dimension(nLevels)            :: water_g, water_w0, ice_g, ice_w0,tau,snow_g,snow_w0
     integer :: i,j
     
     ! Initialize
@@ -190,23 +212,29 @@ contains
           water_w0(1:nLevels) = get_ssa_nir(phaseIsLiquid, sizeLIQ(j,i,1:nLevels))
           ice_g(1:nLevels)    = get_g_nir(  phaseIsIce,    sizeICE(j,i,1:nLevels))
           ice_w0(1:nLevels)   = get_ssa_nir(phaseIsIce,    sizeICE(j,i,1:nLevels))
+          snow_g(1:nLevels)   = get_g_nir(  phaseIsIce,    sizeSNOW(j,i,1:nLevels))
+          snow_w0(1:nLevels)  = get_ssa_nir(phaseIsIce,    sizeSNOW(j,i,1:nLevels))
           
-          ! Combine ice and water optical properties
+          ! Combine ice, snow and water optical properties
           tau(1:nLevels) = tauICE(j,i,1:nLevels) + tauLIQ(j,i,1:nLevels) 
           where (tau(1:nLevels) > 0) 
-             g(j,i,1:nLevels)  = (tauLIQ(j,i,1:nLevels)*water_g(1:nLevels) + tauICE(j,i,1:nLevels)*ice_g(1:nLevels)) / & 
-                  tau(1:nLevels) 
-             w0(j,i,1:nLevels) = (tauLIQ(j,i,1:nLevels)*water_g(1:nLevels)*water_w0(1:nLevels) + tauICE(j,i,1:nLevels) * &
-                  ice_g(1:nLevels) * ice_w0(1:nLevels)) / (g(j,i,1:nLevels) * tau(1:nLevels))
+             g(j,i,1:nLevels)  = (tauLIQ(j,i,1:nLevels)*water_g(1:nLevels)  + &
+                                  tauICE(j,i,1:nLevels)*ice_g(1:nLevels)    + &
+                                  tauSNOW(j,i,1:nLevels)*snow_g(1:nLevels)) / & 
+                                  tau(1:nLevels) 
+             w0(j,i,1:nLevels) = (tauLIQ(j,i,1:nLevels)*water_g(1:nLevels)*water_w0(1:nLevels) + &
+                                  tauICE(j,i,1:nLevels)*ice_g(1:nLevels)*ice_w0(1:nLevels)    + &
+                                  tauSNOW(j,i,1:nLevels)*snow_g(1:nLevels)*snow_w0(1:nLevels)) / &
+                                  (g(j,i,1:nLevels) * tau(1:nLevels))
           end where
        enddo
     enddo
     
     ! Compute the total optical thickness and the proportion due to liquid in each cell
     do i=1,npoints
-       where(tauLIQ(i,1:nSubCols,1:nLevels) + tauICE(i,1:nSubCols,1:nLevels) > 0.) 
+       where(tauLIQ(i,1:nSubCols,1:nLevels) + tauICE(i,1:nSubCols,1:nLevels) + tauSNOW(i,1:nSubCols,1:nLevels) > 0.) 
           fracLIQ(i,1:nSubCols,1:nLevels) = tauLIQ(i,1:nSubCols,1:nLevels)/ &
-               (tauLIQ(i,1:nSubCols,1:nLevels) + tauICE(i,1:nSubCols,1:nLevels))
+               (tauLIQ(i,1:nSubCols,1:nLevels) + tauICE(i,1:nSubCols,1:nLevels) + tauSNOW(i,1:nSubCols,1:nLevels) )
        elsewhere
           fracLIQ(i,1:nSubCols,1:nLevels) = 0._wp
        end  where
@@ -217,11 +245,11 @@ contains
   ! ######################################################################################
   ! SUBROUTINE lidar_optics
   ! ######################################################################################
-  subroutine lidar_optics(npoints,ncolumns,nlev,npart,ice_type,q_lsliq, q_lsice,     &
-                              q_cvliq, q_cvice,ls_radliq,ls_radice,cv_radliq,cv_radice,  &
-                              pres,presf,temp,beta_mol,betatot,tau_part,tau_mol,tautot,  &
-                              tautot_S_liq,tautot_S_ice,betatot_ice,betatot_liq,         &
-                              tautot_ice,tautot_liq)
+  subroutine lidar_optics(npoints,ncolumns,nlev,npart,ice_type,q_lsliq, q_lsice,q_cvliq, &
+                          q_cvice,q_lssnow,ls_radliq,ls_radice,cv_radliq,cv_radice,ls_radsnow,  &
+                          pres,presf,temp,beta_mol,betatot,tau_part,tau_mol,tautot,  &
+                          tautot_S_liq,tautot_S_ice,betatot_ice,betatot_liq,         &
+                          tautot_ice,tautot_liq)
     ! ####################################################################################
     ! NOTE: Using "grav" from cosp_constants.f90, instead of grav=9.81, introduces
     ! changes of up to 2% in atb532 adn 0.003% in parasolRefl and lidarBetaMol532. 
@@ -241,12 +269,14 @@ contains
          ls_radliq,    & ! Effective radius of LS liquid particles (meters)
          ls_radice,    & ! Effective radius of LS ice particles (meters)
          cv_radliq,    & ! Effective radius of CONV liquid particles (meters)
-         cv_radice       ! Effective radius of CONV ice particles (meters)
+         cv_radice,    & ! Effective radius of CONV ice particles (meters)
+         ls_radsnow      ! Effective radius of LS snow particles (meters)
     REAL(WP),intent(in),dimension(npoints,ncolumns,nlev) :: &
          q_lsliq,      & ! LS sub-column liquid water mixing ratio (kg/kg)
          q_lsice,      & ! LS sub-column ice water mixing ratio (kg/kg)
          q_cvliq,      & ! CONV sub-column liquid water mixing ratio (kg/kg)
-         q_cvice         ! CONV sub-column ice water mixing ratio (kg/kg)
+         q_cvice,      & ! CONV sub-column ice water mixing ratio (kg/kg)
+         q_lssnow        ! LS sub-column snow mixing ratio (kg/kg)
     REAL(WP),intent(in),dimension(npoints,nlev+1) :: &
          presf           ! Pressure at half levels
     
@@ -283,10 +313,11 @@ contains
     REAL(WP),PARAMETER :: rdiffm     = 0.7_wp     ! Multiple scattering correction parameter
     REAL(WP),PARAMETER :: Qscat      = 2.0_wp     ! Particle scattering efficiency at 532 nm
     ! Local indicies for large-scale and convective ice and liquid 
-    INTEGER,PARAMETER  :: INDX_LSLIQ = 1
-    INTEGER,PARAMETER  :: INDX_LSICE = 2
-    INTEGER,PARAMETER  :: INDX_CVLIQ = 3
-    INTEGER,PARAMETER  :: INDX_CVICE = 4
+    INTEGER,PARAMETER  :: INDX_LSLIQ  = 1
+    INTEGER,PARAMETER  :: INDX_LSICE  = 2
+    INTEGER,PARAMETER  :: INDX_CVLIQ  = 3
+    INTEGER,PARAMETER  :: INDX_CVICE  = 4
+    INTEGER,PARAMETER  :: INDX_LSSNOW = 5
     
     ! Polarized optics parameterization
     ! Polynomial coefficients for spherical liq/ice particles derived from Mie theory.
@@ -300,18 +331,21 @@ contains
          polpartCVICE0 = (/-1.0176e-8_wp,   1.7615e-6_wp, -1.0480e-4_wp,     0.0019_wp,    0.0460_wp/), &
          polpartLSICE0 = (/-1.0176e-8_wp,   1.7615e-6_wp, -1.0480e-4_wp,     0.0019_wp,    0.0460_wp/), &
          polpartCVICE1 = (/ 1.3615e-8_wp, -2.04206e-6_wp, 7.51799e-5_wp, 0.00078213_wp, 0.0182131_wp/), &
-         polpartLSICE1 = (/ 1.3615e-8_wp, -2.04206e-6_wp, 7.51799e-5_wp, 0.00078213_wp, 0.0182131_wp/)
+         polpartLSICE1 = (/ 1.3615e-8_wp, -2.04206e-6_wp, 7.51799e-5_wp, 0.00078213_wp, 0.0182131_wp/), &
+         polpartLSSNOW = (/ 1.3615e-8_wp, -2.04206e-6_wp, 7.51799e-5_wp, 0.00078213_wp, 0.0182131_wp/)
     ! ##############################################################################
     
     ! Liquid/ice particles
-    rhopart(INDX_LSLIQ) = rholiq
-    rhopart(INDX_LSICE) = rhoice
-    rhopart(INDX_CVLIQ) = rholiq
-    rhopart(INDX_CVICE) = rhoice
+    rhopart(INDX_LSLIQ)  = rholiq
+    rhopart(INDX_LSICE)  = rhoice
+    rhopart(INDX_CVLIQ)  = rholiq
+    rhopart(INDX_CVICE)  = rhoice
+    rhopart(INDX_LSSNOW) = rhoice/2._wp
     
     ! LS and CONV Liquid water coefficients
-    polpart(INDX_LSLIQ,1:5) = polpartLSLIQ
-    polpart(INDX_CVLIQ,1:5) = polpartCVLIQ
+    polpart(INDX_LSLIQ,1:5)  = polpartLSLIQ
+    polpart(INDX_CVLIQ,1:5)  = polpartCVLIQ
+    polpart(INDX_LSSNOW,1:5) = polpartLSSNOW
     ! LS and CONV Ice water coefficients
     if (ice_type .eq. 0) then
        polpart(INDX_LSICE,1:5) = polpartLSICE0
@@ -323,13 +357,16 @@ contains
     endif
     
     ! Effective radius particles:
-    rad_part(1:npoints,1:nlev,INDX_LSLIQ) = ls_radliq(1:npoints,1:nlev)
-    rad_part(1:npoints,1:nlev,INDX_LSICE) = ls_radice(1:npoints,1:nlev)
-    rad_part(1:npoints,1:nlev,INDX_CVLIQ) = cv_radliq(1:npoints,1:nlev)
-    rad_part(1:npoints,1:nlev,INDX_CVICE) = cv_radice(1:npoints,1:nlev)    
-    rad_part(1:npoints,1:nlev,1:npart)    = MAX(rad_part(1:npoints,1:nlev,1:npart),0._wp)
-    rad_part(1:npoints,1:nlev,1:npart)    = MIN(rad_part(1:npoints,1:nlev,1:npart),70.0e-6_wp)
-    
+    rad_part(1:npoints,1:nlev,INDX_LSLIQ)  = ls_radliq(1:npoints,1:nlev)
+    rad_part(1:npoints,1:nlev,INDX_LSICE)  = ls_radice(1:npoints,1:nlev)
+    rad_part(1:npoints,1:nlev,INDX_CVLIQ)  = cv_radliq(1:npoints,1:nlev)
+    rad_part(1:npoints,1:nlev,INDX_CVICE)  = cv_radice(1:npoints,1:nlev)    
+    rad_part(1:npoints,1:nlev,INDX_LSSNOW) = ls_radsnow(1:npoints,1:nlev)
+    rad_part(1:npoints,1:nlev,1:npart)     = MAX(rad_part(1:npoints,1:nlev,1:npart),0._wp)
+    rad_part(1:npoints,1:nlev,1:npart)     = MIN(rad_part(1:npoints,1:nlev,1:npart),70.0e-6_wp)
+    !ls_radsnow(1:npoints,1:nlev)           = MAX(ls_radsnow(1:npoints,1:nlev),0._wp)
+    !ls_radsnow(1:npoints,1:nlev)           = MIN(ls_radsnow(1:npoints,1:nlev),1000.e-6_wp)   
+
     ! Density (clear-sky air)
     rhoair(1:npoints,1:nlev) = pres(1:npoints,1:nlev)/(rd*temp(1:npoints,1:nlev))
     
@@ -387,10 +424,11 @@ contains
        ! ##############################################################################
        ! Mixing ratio particles in each subcolum
        ! ##############################################################################
-       qpart(1:npoints,1:nlev,INDX_LSLIQ) = q_lsliq(1:npoints,icol,1:nlev)
-       qpart(1:npoints,1:nlev,INDX_LSICE) = q_lsice(1:npoints,icol,1:nlev)
-       qpart(1:npoints,1:nlev,INDX_CVLIQ) = q_cvliq(1:npoints,icol,1:nlev)
-       qpart(1:npoints,1:nlev,INDX_CVICE) = q_cvice(1:npoints,icol,1:nlev)
+       qpart(1:npoints,1:nlev,INDX_LSLIQ)  = q_lsliq(1:npoints,icol,1:nlev)
+       qpart(1:npoints,1:nlev,INDX_LSICE)  = q_lsice(1:npoints,icol,1:nlev)
+       qpart(1:npoints,1:nlev,INDX_CVLIQ)  = q_cvliq(1:npoints,icol,1:nlev)
+       qpart(1:npoints,1:nlev,INDX_CVICE)  = q_cvice(1:npoints,icol,1:nlev)
+       qpart(1:npoints,1:nlev,INDX_LSSNOW) = q_lssnow(1:npoints,icol,1:nlev)
        
        ! ##############################################################################
        ! Alpha and optical thickness (particles)

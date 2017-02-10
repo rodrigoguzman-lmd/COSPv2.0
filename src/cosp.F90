@@ -130,8 +130,10 @@ MODULE MOD_COSP
      real(wp),allocatable,dimension(:,:,:) :: &
           frac_out,            & ! Cloud fraction
           tau_067,             & ! Optical depth
+          tau_067_snow,        & ! Optical depth (with snow)
           fracLiq,             & ! Cloud fraction
           emiss_11,            & ! Emissivity
+          emiss_11_snow,       & ! Emissivity (with snow)
           asym,                & ! Assymetry parameter
           ss_alb,              & ! Single-scattering albedo
           betatot,             & ! Backscatter coefficient for polarized optics (total)
@@ -250,7 +252,7 @@ CONTAINS
   ! FUNCTION cosp_simulator
   ! ######################################################################################
 !  SUBROUTINE COSP_SIMULATOR(cospIN,cospgridIN,cospOUT,start_idx,stop_idx)
-  function COSP_SIMULATOR(cospIN,cospgridIN,cospOUT,start_idx,stop_idx,debug)
+  function COSP_SIMULATOR(cospIN,cospgridIN,cospOUT,start_idx,stop_idx,debug_cosp)
     type(cosp_optical_inputs),intent(in),target :: cospIN     ! Optical inputs to COSP simulator
     type(cosp_column_inputs), intent(in),target :: cospgridIN ! Host model inputs to COSP
     
@@ -263,7 +265,7 @@ CONTAINS
     type(modis_IN)    :: modisIN    ! Input to the MODIS simulator
     type(rttov_IN)    :: rttovIN    ! Input to the RTTOV simulator
     integer,optional  :: start_idx,stop_idx
-    logical,optional  :: debug
+    logical,optional  :: debug_cosp
     
     ! Outputs from the simulators (nested simulator output structure)
     type(cosp_outputs), intent(inout) :: cospOUT
@@ -317,6 +319,8 @@ CONTAINS
        t_in,betamol_in,tmpFlip,betamolFlip,pnormFlip,pnorm_perpFlip,ze_totFlip
     real(wp),dimension(20) :: cosp_time
 
+    !if (.not. present(debug_cosp)) debug_cosp=.false.
+
     call cpu_time(cosp_time(1))
     ! Initialize error reporting for output
     cosp_simulator(:)=''
@@ -332,7 +336,7 @@ CONTAINS
        ik=cospIN%Npoints
     endif
     Npoints = ik-ij+1
-    
+
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ! 2a) Determine which simulators to run and which statistics to compute
     !    - If any of the subcolumn fields are allocated, then run the subcolumn simulators. 
@@ -403,12 +407,14 @@ CONTAINS
        Lparasol_subcolumn  = .true.
 
     ! RTTOV column
-    if (associated(cospOUT%rttov_tbs))                                                   &
+    if (associated(cospOUT%rttov_tbs))   then
        Lrttov_column    = .true.
+       if (size(cospOUT%isccp_meantb) .eq. stop_idx) lrttov_cleanUp = .true.    
+    endif
 
     ! Set flag to deallocate rttov types (only done on final call to simulator)
-    if (size(cospOUT%isccp_meantb) .eq. stop_idx) lrttov_cleanUp = .true.    
-    
+    !if (size(cospOUT%isccp_meantb) .eq. stop_idx) lrttov_cleanUp = .true.    
+
     ! ISCCP column
     if (associated(cospOUT%isccp_fq)                                       .or.          &
         associated(cospOUT%isccp_meanalbedocld)                            .or.          &
@@ -483,10 +489,10 @@ CONTAINS
        Lradar_lidar_tcc    = .true.
        Llidar_only_freq_cloud = .true.
     endif
-    
+
     call cpu_time(cosp_time(2))
-    if (debug) print*,'   Time to check outputs to see which simualtor to run:  ',cosp_time(2)-cosp_time(1)
-    
+    if (debug_cosp) print*,'   Time to check outputs to see which simualtor to run:  ',cosp_time(2)-cosp_time(1)
+
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ! 2b) Error Checking
     !     Enforce bounds on input fields. If input field is out-of-bounds, report error 
@@ -499,7 +505,7 @@ CONTAINS
                          Lparasol_subcolumn,Lparasol_column,Lradar_lidar_tcc,            &
                          Llidar_only_freq_cloud,cospOUT,cosp_simulator,nError)
     call cpu_time(cosp_time(3))
-    if (debug) print*,'   Time for cosp_errorCheck:                             ',cosp_time(3)-cosp_time(2)
+    if (debug_cosp) print*,'   Time for cosp_errorCheck:                             ',cosp_time(3)-cosp_time(2)
 
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ! 3) Populate instrument simulator inputs
@@ -513,8 +519,8 @@ CONTAINS
        isccpIN%qv       => cospgridIN%qv
        isccpIN%at       => cospgridIN%at
        isccpIN%frac_out => cospIN%frac_out
-       isccpIN%dtau     => cospIN%tau_067
-       isccpIN%dem      => cospIN%emiss_11
+       isccpIN%dtau     => cospIN%tau_067_snow
+       isccpIN%dem      => cospIN%emiss_11_snow
        isccpIN%phalf    => cospgridIN%phalf
        isccpIN%sunlit   => cospgridIN%sunlit
        isccpIN%pfull    => cospgridIN%pfull
@@ -524,7 +530,7 @@ CONTAINS
        misrIN%Npoints  => Npoints
        misrIN%Ncolumns => cospIN%Ncolumns
        misrIN%Nlevels  => cospIN%Nlevels
-       misrIN%dtau     => cospIN%tau_067
+       misrIN%dtau     => cospIN%tau_067_snow
        misrIN%sunlit   => cospgridIN%sunlit
        misrIN%zfull    => cospgridIN%hgt_matrix
        misrIN%at       => cospgridIN%at
@@ -618,7 +624,8 @@ CONTAINS
        rttovIN%fl_snow    => cospgridIN%fl_snow
     endif
     call cpu_time(cosp_time(3))
-    if (debug) print*,'   Time to populate simulator imputs:                    ',cosp_time(3)-cosp_time(2)
+    if (debug_cosp) print*,'   Time to populate simulator imputs:                    ',cosp_time(3)-cosp_time(2)
+    print*,'END section 3'
 
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ! 4) Call subcolumn simulators
@@ -650,7 +657,8 @@ CONTAINS
        endif
    endif
    call cpu_time(cosp_time(4))
-   if (debug) print*,'   Time to run isccp_subcolumn:                          ',cosp_time(4)-cosp_time(3)
+   if (debug_cosp) print*,'   Time to run isccp_subcolumn:                          ',cosp_time(4)-cosp_time(3)
+    print*,'END section 3a'
 
    ! MISR subcolumn simulator
     if (Lmisr_subcolumn) then
@@ -668,7 +676,8 @@ CONTAINS
        endif
     endif
    call cpu_time(cosp_time(5))
-   if (debug) print*,'   Time to run misr_subcolumn:                           ',cosp_time(5)-cosp_time(4)
+   if (debug_cosp) print*,'   Time to run misr_subcolumn:                           ',cosp_time(5)-cosp_time(4)
+   print*,'END section 3b'
 
     ! Calipso subcolumn simulator
     if (Lcalipso_subcolumn) then
@@ -676,6 +685,8 @@ CONTAINS
        allocate(calipso_beta_mol(calipsoIN%Npoints,calipsoIN%Nlevels),                   &
                 calipso_beta_tot(calipsoIN%Npoints,calipsoIN%Ncolumns,calipsoIN%Nlevels),&
                 calipso_betaperp_tot(calipsoIN%Npoints,calipsoIN%Ncolumns,calipsoIN%Nlevels))
+       print*,'END section 3b.i'
+ 
        ! Call simulator
        call lidar_subcolumn(calipsoIN%npoints,calipsoIN%ncolumns,calipsoIN%nlevels,      &
                             calipsoIN%beta_mol,calipsoIN%tau_mol,                        &
@@ -683,17 +694,22 @@ CONTAINS
                             calipsoIN%tautot_ice,calipsoIN%betatot_liq,                  &
                             calipsoIN%tautot_liq,calipso_beta_mol(:,:),                  &
                             calipso_beta_tot(:,:,:),calipso_betaperp_tot(:,:,:))
+       print*,'END section 3b.ii'
        ! Store output (if requested)
        if (associated(cospOUT%calipso_beta_mol))                                         &
             cospOUT%calipso_beta_mol(ij:ik,:) = calipso_beta_mol
+       print*,'END section 3b.iii'
        if (associated(cospOUT%calipso_beta_tot))                                         &
             cospOUT%calipso_beta_tot(ij:ik,:,:) = calipso_beta_tot
+       print*,'END section 3b.iiii'
        if (associated(cospOUT%calipso_betaperp_tot))                                     &
             cospOUT%calipso_betaperp_tot(ij:ik,:,:) = calipso_betaperp_tot
+       print*,'END section 3b.iiiii'
 
     endif
    call cpu_time(cosp_time(6))
-   if (debug) print*,'   Time to run lidar_subcolumn:                          ',cosp_time(6)-cosp_time(5)
+   if (debug_cosp) print*,'   Time to run lidar_subcolumn:                          ',cosp_time(6)-cosp_time(5)
+    print*,'END section 3c'
 
     ! PARASOL subcolumn simulator
     if (Lparasol_subcolumn) then
@@ -713,7 +729,8 @@ CONTAINS
        enddo
     endif    
     call cpu_time(cosp_time(7))
-    if (debug) print*,'   Time to run parasol_subcolumn:                        ',cosp_time(7)-cosp_time(6)
+    if (debug_cosp) print*,'   Time to run parasol_subcolumn:                        ',cosp_time(7)-cosp_time(6)
+    print*,'END section 3d'
 
     ! Cloudsat (quickbeam) subcolumn simulator
     if (Lcloudsat_subcolumn) then
@@ -732,8 +749,9 @@ CONTAINS
        endif
     endif
     call cpu_time(cosp_time(8))
-    if (debug) print*,'   Time to run radar_subcolumn:                          ',cosp_time(8)-cosp_time(7)
-   
+    if (debug_cosp) print*,'   Time to run radar_subcolumn:                          ',cosp_time(8)-cosp_time(7)
+    print*,'END section 3e'
+
     if (Lmodis_subcolumn) then
        if(modisiN%nSunlit > 0) then 
           ! Allocate space for local variables
@@ -758,7 +776,8 @@ CONTAINS
        endif
     endif
     call cpu_time(cosp_time(9))
-    if (debug) print*,'   Time to run modis_subcolum:                           ',cosp_time(9)-cosp_time(8)
+    if (debug_cosp) print*,'   Time to run modis_subcolum:                           ',cosp_time(9)-cosp_time(8)
+    print*,'END section 4'
 
 
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -842,7 +861,7 @@ CONTAINS
        endif
     endif
     call cpu_time(cosp_time(10))
-    if (debug) print*,'   Time to run isccp_column:                             ',cosp_time(10)-cosp_time(9)
+    if (debug_cosp) print*,'   Time to run isccp_column:                             ',cosp_time(10)-cosp_time(9)
 
     ! MISR
     if (Lmisr_column) then
@@ -883,7 +902,7 @@ CONTAINS
        endif
     endif
     call cpu_time(cosp_time(11))
-    if (debug) print*,'   Time to run misr_column:                              ',cosp_time(11)-cosp_time(10)
+    if (debug_cosp) print*,'   Time to run misr_column:                              ',cosp_time(11)-cosp_time(10)
     
     ! CALIPSO LIDAR Simulator
     if (Lcalipso_column) then
@@ -956,7 +975,7 @@ CONTAINS
        endif
     endif
     call cpu_time(cosp_time(12))
-    if (debug) print*,'   Time to run lidar_column:                             ',cosp_time(12)-cosp_time(11)
+    if (debug_cosp) print*,'   Time to run lidar_column:                             ',cosp_time(12)-cosp_time(11)
 
     ! PARASOL
     if (Lparasol_column) then
@@ -966,7 +985,7 @@ CONTAINS
        if (allocated(parasolPix_refl)) deallocate(parasolPix_refl)
     endif
     call cpu_time(cosp_time(13))
-    if (debug) print*,'   Time to run parasol_column:                           ',cosp_time(13)-cosp_time(12)
+    if (debug_cosp) print*,'   Time to run parasol_column:                           ',cosp_time(13)-cosp_time(12)
     
     ! CLOUDSAT
     if (Lcloudsat_column) then
@@ -987,7 +1006,7 @@ CONTAINS
        endif
     endif
     call cpu_time(cosp_time(14))
-    if (debug) print*,'   Time to run radar_column:                             ',cosp_time(14)-cosp_time(13)
+    if (debug_cosp) print*,'   Time to run radar_column:                             ',cosp_time(14)-cosp_time(13)
 
     ! MODIS
     if (Lmodis_column) then
@@ -1215,7 +1234,7 @@ CONTAINS
        if (allocated(isccpLEVMATCH))                   deallocate(isccpLEVMATCH)
     endif
     call cpu_time(cosp_time(15))
-    if (debug) print*,'   Time to run modis_column:                             ',cosp_time(15)-cosp_time(14)
+    if (debug_cosp) print*,'   Time to run modis_column:                             ',cosp_time(15)-cosp_time(14)
     
     ! RTTOV
     if (lrttov_column) then
@@ -1233,8 +1252,9 @@ CONTAINS
                          ! rttovIN%fl_rain,rttovIN%fl_snow)
     endif
     call cpu_time(cosp_time(16))
-    if (debug) print*,'   Time to run rttov_column:                             ',cosp_time(16)-cosp_time(15)
-    
+    if (debug_cosp) print*,'   Time to run rttov_column:                             ',cosp_time(16)-cosp_time(15)
+    print*,'END section 5'
+
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ! 6) Compute multi-instrument products
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1301,8 +1321,9 @@ CONTAINS
 
     endif
     call cpu_time(cosp_time(17))
-    if (debug) print*,'   Time to create joint products:                        ',cosp_time(17)-cosp_time(16)
-    
+    if (debug_cosp) print*,'   Time to create joint products:                        ',cosp_time(17)-cosp_time(16)
+    print*,'END section 6'
+
     ! Cleanup 
     if (allocated(calipso_beta_tot))      deallocate(calipso_beta_tot)
     if (allocated(calipso_beta_mol))      deallocate(calipso_beta_mol)
@@ -1310,17 +1331,18 @@ CONTAINS
     if (allocated(cloudsatDBZe))          deallocate(cloudsatDBZe)
     if (allocated(lidar_only_freq_cloud)) deallocate(lidar_only_freq_cloud)
     if (allocated(radar_lidar_tcc))       deallocate(radar_lidar_tcc)
+    print*,'END section 7'
 
   end function COSP_SIMULATOR
+
   ! ######################################################################################
   ! SUBROUTINE cosp_init
   ! ######################################################################################
-  SUBROUTINE COSP_INIT(Lisccp,Lmodis,Lmisr,Lcloudsat,Lcalipso,Lparasol,Lrttov,            &
-                       Npoints,Nlevels,cloudsat_radar_freq,cloudsat_k2,                  &
-                       cloudsat_use_gas_abs,cloudsat_do_ray,isccp_top_height,            &
-                       isccp_top_height_direction,surface_radar,rcfg,rttov_Nchannels,    &
-                       rttov_Channels,rttov_platform,rttov_satellite,rttov_instrument,   &
-                       lusevgrid,luseCSATvgrid,Nvgrid,cloudsat_micro_scheme,cospOUT)
+  SUBROUTINE COSP_INIT(Lisccp,Lmodis,Lmisr,Lcloudsat,Lcalipso,Lparasol,Lrttov,           &
+                       cloudsat_radar_freq,cloudsat_k2,cloudsat_use_gas_abs,             &
+                       cloudsat_do_ray,isccp_top_height,isccp_top_height_direction,      &
+                       surface_radar,rcfg,lusevgrid,luseCSATvgrid,Nvgrid,                &
+                       cloudsat_micro_scheme,cospOUT)
     
     ! INPUTS
     logical,intent(in) :: Lisccp,Lmodis,Lmisr,Lcloudsat,Lcalipso,Lparasol,Lrttov
@@ -1329,16 +1351,8 @@ CONTAINS
          cloudsat_do_ray,            & !
          isccp_top_height,           & !
          isccp_top_height_direction, & !
-         Npoints,                    & !
-         Nlevels,                    & !
          Nvgrid,                     & ! Number of levels for new L3 grid
-         surface_radar,              & ! 
-         rttov_Nchannels,            & ! Number of RTTOV channels
-         rttov_platform,             & ! RTTOV platform
-         rttov_satellite,            & ! RTTOV satellite
-         rttov_instrument              ! RTTOV instrument
-    integer,intent(in),dimension(RTTOV_MAX_CHANNELS) :: &
-         rttov_channels                ! RTTOV channels    
+         surface_radar
     real(wp),intent(in) :: &
          cloudsat_radar_freq,        & !
          cloudsat_k2                   !   
@@ -1373,9 +1387,15 @@ CONTAINS
       Nlvgrid  = Nvgrid
        allocate(vgrid_zl(Nlvgrid),vgrid_zu(Nlvgrid),vgrid_z(Nlvgrid))
        ! CloudSat grid requested
-       if (luseCSATvgrid)       zstep = 480._wp
+       if (luseCSATvgrid) then
+          zstep   = 480._wp
+          Nlvgrid = 40
+       endif
        ! Other grid requested. Constant vertical spacing with top at 20 km
-       if (.not. luseCSATvgrid) zstep = 20000._wp/Nvgrid
+       if (.not. luseCSATvgrid) then
+          Nlvgrid = Nvgrid
+          zstep   = 20000._wp/Nlvgrid
+       endif
        do i=1,Nvgrid
           vgrid_zl(Nlvgrid-i+1) = (i-1)*zstep
           vgrid_zu(Nlvgrid-i+1) = i*zstep
@@ -1391,8 +1411,8 @@ CONTAINS
     !     rttov_instrument,rttov_channels)
     if (Lrttov) call cosp_rttov_init()
     if (Lcloudsat) call cosp_cloudsat_init(cloudsat_radar_freq,cloudsat_k2,              &
-         cloudsat_use_gas_abs,cloudsat_do_ray,R_UNDEF,N_HYDRO,Npoints,Nlevels,           &
-         surface_radar,rcfg,cloudsat_micro_scheme)
+         cloudsat_use_gas_abs,cloudsat_do_ray,R_UNDEF,N_HYDRO,surface_radar,rcfg,        &
+         cloudsat_micro_scheme)
     if (Lcalipso) call cosp_calipso_init()
     if (Lparasol) call cosp_parasol_init()
 
@@ -1453,6 +1473,7 @@ CONTAINS
     y%Nrefl    = PARASOL_NREFL
     
     allocate(y%tau_067(npoints,ncolumns,nlevels),    y%emiss_11(npoints,ncolumns,nlevels),&
+             y%tau_067_snow(npoints,ncolumns,nlevels),y%emiss_11_snow(npoints,ncolumns,nlevels),&
              y%frac_out(npoints,ncolumns,nlevels),   y%beta_mol(npoints,nlevels),        &
              y%tau_mol(npoints,nlevels),             y%betatot(npoints,ncolumns,nlevels),&
              y%betatot_ice(npoints,ncolumns,nlevels),y%fracLiq(npoints,nColumns,nlevels),&
@@ -1478,13 +1499,25 @@ CONTAINS
     ! Outputs
     type(cosp_column_inputs),intent(out) :: y         
     
-    allocate(y%sunlit(npoints),y%skt(npoints),y%land(npoints),y%at(npoints,nlevels),     &
-             y%pfull(npoints,nlevels),y%phalf(npoints,nlevels+1),y%qv(npoints,nlevels),  &
-             y%o3(npoints,nlevels),y%hgt_matrix(npoints,nlevels),y%u_sfc(npoints),       &
-             y%v_sfc(npoints),y%lat(npoints),y%lon(nPoints),y%emis_sfc(nchan),           &
-             y%cloudIce(nPoints,nLevels),y%cloudLiq(nPoints,nLevels),                    &
-             y%fl_snow(nPoints,nLevels),y%fl_rain(nPoints,nLevels),y%seaice(npoints),    &
-             y%tca(nPoints,nLevels),y%hgt_matrix_half(npoints,nlevels+1))
+    ! Using RTTOV
+    if (nchan .ne. 0) then
+       allocate(y%sunlit(npoints),y%skt(npoints),y%land(npoints),y%at(npoints,nlevels),     &
+                y%pfull(npoints,nlevels),y%phalf(npoints,nlevels+1),y%qv(npoints,nlevels),  &
+                y%o3(npoints,nlevels),y%hgt_matrix(npoints,nlevels),y%u_sfc(npoints),       &
+                y%v_sfc(npoints),y%lat(npoints),y%lon(nPoints),y%emis_sfc(nchan),           &
+                y%cloudIce(nPoints,nLevels),y%cloudLiq(nPoints,nLevels),                    &
+                y%fl_snow(nPoints,nLevels),y%fl_rain(nPoints,nLevels),y%seaice(npoints),    &
+                y%tca(nPoints,nLevels),y%hgt_matrix_half(npoints,nlevels+1))
+    ! No RTTOV
+    else
+       allocate(y%sunlit(npoints),y%skt(npoints),y%land(npoints),y%at(npoints,nlevels),     &
+                y%pfull(npoints,nlevels),y%phalf(npoints,nlevels+1),y%qv(npoints,nlevels),  &
+                y%o3(npoints,nlevels),y%hgt_matrix(npoints,nlevels),y%u_sfc(npoints),       &
+                y%v_sfc(npoints),y%lat(npoints),y%lon(nPoints),                             &
+                y%cloudIce(nPoints,nLevels),y%cloudLiq(nPoints,nLevels),                    &
+                y%fl_snow(nPoints,nLevels),y%fl_rain(nPoints,nLevels),y%seaice(npoints),    &
+                y%tca(nPoints,nLevels),y%hgt_matrix_half(npoints,nlevels+1))
+    endif
 
   end subroutine construct_cospstateIN
 
@@ -1698,7 +1731,8 @@ CONTAINS
     deallocate(y%tau_067,y%emiss_11,y%frac_out,y%beta_mol,y%tau_mol,y%betatot,           &
                y%betatot_ice,y%betatot_liq,y%tautot,y%tautot_ice,y%tautot_liq,           &
                y%tautot_S_liq,y%tautot_S_ice,y%z_vol_cloudsat,y%kr_vol_cloudsat,         &
-               y%g_vol_cloudsat,y%asym,y%ss_alb,y%fracLiq,y%taupart)
+               y%g_vol_cloudsat,y%asym,y%ss_alb,y%fracLiq,y%taupart,y%tau_067_snow,      &
+               y%emiss_11_snow)
 
   end subroutine destroy_cospIN
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1707,8 +1741,10 @@ CONTAINS
   subroutine destroy_cospstateIN(y)
     type(cosp_column_inputs),intent(inout) :: y
     deallocate(y%sunlit,y%skt,y%land,y%at,y%pfull ,y%phalf,y%qv,y%o3,y%hgt_matrix,       &
-               y%u_sfc,y%v_sfc,y%lat,y%lon,y%emis_sfc,y%cloudIce,y%cloudLiq,y%seaice,    &
+               y%u_sfc,y%v_sfc,y%lat,y%lon,y%cloudIce,y%cloudLiq,y%seaice,               &
                y%fl_rain,y%fl_snow,y%tca,y%hgt_matrix_half)
+    ! RTTOV
+    if (allocated(y%emis_sfc)) deallocate(y%emis_sfc)
 
   end subroutine destroy_cospstateIN
   
@@ -2258,7 +2294,8 @@ CONTAINS
        if (associated(cospOUT%isccp_fq))            cospOUT%isccp_fq(:,:,:)        = R_UNDEF     
     endif
 
-	! RTTOV Inputs
+    ! RTTOV Inputs
+    if (associated(cospOUT%rttov_tbs)) then
     if (cospgridIN%zenang .lt. -90. .OR. cospgridIN%zenang .gt. 90) then
        nError=nError+1
        errorMessage(nError) = 'ERROR: COSP input variable: cospgridIN%zenang contains values out of range'
@@ -2318,6 +2355,7 @@ CONTAINS
        errorMessage(nError) = 'ERROR: COSP input variable: cospIN%lat contains values out of range'
        Lrttov_subcolumn = .false.
        if (associated(cospOUT%rttov_tbs)) cospOUT%rttov_tbs(:,:) = R_UNDEF       
+    endif
     endif
 
     ! COSP_INPUTS

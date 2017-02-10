@@ -31,7 +31,7 @@
 ! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 MODULE MOD_COSP_CALIPSO_INTERFACE
   USE COSP_KINDS,              ONLY: wp
-  USE MOD_LIDAR_SIMULATOR,     ONLY: alpha,beta,gamma
+  USE MOD_LIDAR_SIMULATOR,     ONLY: alpha,beta,gamma2
   IMPLICIT NONE
   
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -74,7 +74,7 @@ CONTAINS
     !          ATBperp,ice = Beta*ATBice^2 + Gamma*ATBice
     Alpha = 0.2904_wp
     Beta  = 0.4099_wp
-    Gamma = 0.009_wp    
+    Gamma2 = 0.009_wp    
     
   end subroutine cosp_calipso_init
 

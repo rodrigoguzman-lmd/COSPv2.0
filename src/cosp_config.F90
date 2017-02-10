@@ -74,7 +74,7 @@ MODULE MOD_COSP_CONFIG
     integer,parameter :: &
        ntau=7  
     real(wp),parameter,dimension(ntau+1) :: &
-       tau_binBounds = (/0.0, 0.3, 1.3, 3.6, 9.4, 23., 60., 10000./)  
+       tau_binBounds = (/0.0, 0.3, 1.3, 3.6, 9.4, 23., 60., 379./)  
     real(wp),parameter,dimension(ntau) :: &
        tau_binCenters = (/0.15, 0.80, 2.45, 6.5, 16.2, 41.5, 100.0/)
     real(wp),parameter,dimension(2,ntau) :: &
@@ -98,7 +98,8 @@ MODULE MOD_COSP_CONFIG
     integer,parameter :: &
        npres = 7     
     real(wp),parameter,dimension(npres+1) :: &
-       pres_binBounds = (/0., 180., 310., 440., 560., 680., 800., 10000./)
+       !pres_binBounds = (/0., 180., 310., 440., 560., 680., 800., 1000./)
+       pres_binBounds = (/1000., 800., 680., 560., 440., 310., 180., 0./)
     real(wp),parameter,dimension(npres) :: &
        pres_binCenters = (/90000., 74000., 62000., 50000., 37500., 24500., 9000./)   
     real(wp),parameter,dimension(2,npres) :: &
@@ -250,19 +251,18 @@ MODULE MOD_COSP_CONFIG
        DBZE_MAX      =   80, & ! Maximum value for radar reflectivity
        CFAD_ZE_MIN   =  -50, & ! Lower value of the first CFAD Ze bin
        CFAD_ZE_WIDTH =    5    ! Bin width (dBZe)
-!    real(wp),parameter :: &
-!       DBZE_MIN      = -100.0, & ! Minimum value for radar reflectivity
-!       DBZE_MAX      =   80.0, & ! Maximum value for radar reflectivity
-!       CFAD_ZE_MIN   =  -50.0, & ! Lower value of the first CFAD Ze bin
-!       CFAD_ZE_WIDTH =    5.0    ! Bin width (dBZe)
-    real(wp),parameter,dimension(SR_BINS+1) :: &
-       cloudsat_histRef = (/DBZE_MIN,(/(i, i=int(CFAD_ZE_MIN+CFAD_ZE_WIDTH),             &
-                            int(CFAD_ZE_MIN+(SR_BINS-1)*CFAD_ZE_WIDTH),                  &
-                            int(CFAD_ZE_WIDTH))/),DBZE_MAX/)
-!        cloudsat_histRef = (/DBZE_MIN,                                          &
-!                       real((/(i, i=int(CFAD_ZE_MIN+CFAD_ZE_WIDTH),             &
-!                       int(CFAD_ZE_MIN+(SR_BINS-1)*CFAD_ZE_WIDTH),              &
-!                       int(CFAD_ZE_WIDTH))/),wp),DBZE_MAX/)
+
+    real(wp),parameter,dimension(DBZE_BINS+1) :: &
+         cloudsat_histRef = (/DBZE_MIN,(/(i, i=int(CFAD_ZE_MIN+CFAD_ZE_WIDTH),           &
+                             int(CFAD_ZE_MIN+(DBZE_BINS-1)*CFAD_ZE_WIDTH),               &
+                             int(CFAD_ZE_WIDTH))/),DBZE_MAX/)
+    real(wp),parameter,dimension(2,DBZE_BINS) :: &
+         cloudsat_binEdges = reshape(source=(/cloudsat_histRef(1),((cloudsat_histRef(k), &
+                                   l=1,2),k=2,DBZE_BINS),cloudsat_histRef(DBZE_BINS+1)/),&
+                                   shape = (/2,DBZE_BINS/))     
+    real(wp),parameter,dimension(DBZE_BINS) :: &
+         cloudsat_binCenters = (cloudsat_binEdges(1,:)+cloudsat_binEdges(2,:))/2._wp  
+
     ! ####################################################################################
     ! CALISPO backscatter histogram bins 
     ! ####################################################################################
@@ -270,12 +270,15 @@ MODULE MOD_COSP_CONFIG
        S_cld       = 5.0,     & ! Threshold for cloud detection
        S_att       = 0.01,    & !
        S_cld_att   = 30.        ! Threshold for undefined cloud phase detection
-    real(wp),dimension(SR_BINS+1) :: &
-       calipso_histBsct = (/0.0,0.01,1.2,3.0,5.0,7.0,10.0,15.0,20.0,25.0,30.0,40.0,50.0, &
-                            60.0,80.0,100000.0/)         ! Backscatter histogram bins
-!    real(wp),dimension(SR_BINS) :: &
-!       calipso_histBsct = (/0.01,1.2,3.0,5.0,7.0,10.0,15.0,20.0,25.0,30.0,40.0,50.0, &
-!                            60.0,80.0,100000.0/)         ! Backscatter histogram bins
+    real(wp),parameter,dimension(SR_BINS+1) :: &
+         calipso_histBsct = (/0.01,1.2,3.0,5.0,7.0,10.0,15.0,20.0,25.0,30.0,40.0,50.0,   &
+                              60.0,80.0,999.,1009./)         ! Backscatter histogram bins
+    real(wp),parameter,dimension(2,SR_BINS) :: &
+         calipso_binEdges = reshape(source=(/calipso_histBsct(1),((calipso_histBsct(k),  &
+                                    l=1,2),k=2,SR_BINS),calipso_histBsct(SR_BINS+1)/),   &
+                                    shape = (/2,SR_BINS/))     
+    real(wp),parameter,dimension(SR_BINS) :: &
+         calipso_binCenters = (calipso_binEdges(1,:)+calipso_binEdges(2,:))/2._wp  
 
     ! ####################################################################################
     ! Parameters used by the lidar simulator

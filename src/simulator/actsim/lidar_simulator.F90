@@ -84,7 +84,7 @@ module mod_lidar_simulator
   ! Relationship between ATBice and ATBperp,ice for liquid particles:
   !          ATBperp,ice = Beta*ATBice^2 + Gamma*ATBice
   real(wp) :: &
-       alpha,beta,gamma    
+       alpha,beta,gamma2
 
 contains
   ! ######################################################################################
@@ -141,6 +141,7 @@ contains
     call cmp_backsignal(nlev,npoints,beta_mol(1:npoints,1:nlev),&
                         tau_mol(1:npoints,1:nlev),pmol(1:npoints,1:nlev))
                         
+    print*,'  lidar_subcolumn 1'
     ! ####################################################################################
     ! PLANE PARRALLEL FIELDS
     ! ####################################################################################
@@ -150,6 +151,7 @@ contains
        ! #################################################################################
        call cmp_backsignal(nlev,npoints,betatot(1:npoints,icol,1:nlev),&
             tautot(1:npoints,icol,1:nlev),pnorm(1:npoints,icol,1:nlev))
+       print*,'  lidar_subcolumn 1a icol=',icol,' of ',ncolumns
        ! #################################################################################
        ! *) Ice/Liq Backscatter signal
        ! #################################################################################
@@ -158,11 +160,14 @@ contains
        call cmp_backsignal(nlev,npoints,betatot_ice(1:npoints,icol,1:nlev),&
                       tautot_ice(1:npoints,icol,1:nlev),&
                       pnorm_ice(1:npoints,icol,1:nlev))
+       print*,'  lidar_subcolumn 1b'
        ! Liquid only
        call cmp_backsignal(nlev,npoints,betatot_liq(1:npoints,icol,1:nlev),&
                       tautot_liq(1:npoints,icol,1:nlev),&
                       pnorm_liq(1:npoints,icol,1:nlev))
+       print*,'  lidar_subcolumn 1c'
     enddo
+    print*,'  lidar_subcolumn 2'
 
     ! ####################################################################################
     ! PERDENDICULAR FIELDS
@@ -180,20 +185,22 @@ contains
 
           ! Liquid particles
           pnorm_perp_liq(1:npoints,icol,k) = 1000._wp*Beta*pnorm_liq(1:npoints,icol,k)**2+&
-               Gamma*pnorm_liq(1:npoints,icol,k) 
+               Gamma2*pnorm_liq(1:npoints,icol,k) 
        enddo
-  
+      print*,'  lidar_subcolumn 2a'
        ! #################################################################################
        ! *) Computation of beta_perp_ice/liq using the lidar equation
        ! #################################################################################
        ! Ice only
        call cmp_beta(nlev,npoints,pnorm_perp_ice(1:npoints,icol,1:nlev),&
               tautot_ice(1:npoints,icol,1:nlev),beta_perp_ice(1:npoints,icol,1:nlev))        
- 
+       print*,'  lidar_subcolumn 2b'
+
        ! Liquid only
        call cmp_beta(nlev,npoints,pnorm_perp_liq(1:npoints,icol,1:nlev),&
             tautot_liq(1:npoints,icol,1:nlev),beta_perp_liq(1:npoints,icol,1:nlev))
-          
+       print*,'  lidar_subcolumn 2c'
+
        ! #################################################################################
        ! *) Perpendicular Backscatter signal
        ! #################################################################################
@@ -208,7 +215,8 @@ contains
        ELSEWHERE
           pnorm_perp_tot(1:npoints,icol,1) = 0._wp
        ENDWHERE                                                  
-             
+       print*,'  lidar_subcolumn 2d'
+
        ! Other layers
        do k=2,nlev
           ! Optical thickness of layer k
@@ -233,6 +241,8 @@ contains
           ENDWHERE
        END DO
     enddo
+    print*,'  lidar_subcolumn 3'
+
   end subroutine lidar_subcolumn
 
   ! ######################################################################################
