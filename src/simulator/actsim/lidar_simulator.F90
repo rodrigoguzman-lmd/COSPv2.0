@@ -83,7 +83,7 @@ module mod_lidar_simulator
   !                ATBperp,ice = Alpha*ATBice 
   ! Relationship between ATBice and ATBperp,ice for liquid particles:
   !          ATBperp,ice = Beta*ATBice^2 + Gamma*ATBice
-  real(wp) :: &
+  real(wp),save :: &
        alpha,beta,gamma2
 
 contains
@@ -141,7 +141,6 @@ contains
     call cmp_backsignal(nlev,npoints,beta_mol(1:npoints,1:nlev),&
                         tau_mol(1:npoints,1:nlev),pmol(1:npoints,1:nlev))
                         
-    print*,'  lidar_subcolumn 1'
     ! ####################################################################################
     ! PLANE PARRALLEL FIELDS
     ! ####################################################################################
@@ -151,7 +150,6 @@ contains
        ! #################################################################################
        call cmp_backsignal(nlev,npoints,betatot(1:npoints,icol,1:nlev),&
             tautot(1:npoints,icol,1:nlev),pnorm(1:npoints,icol,1:nlev))
-       print*,'  lidar_subcolumn 1a icol=',icol,' of ',ncolumns
        ! #################################################################################
        ! *) Ice/Liq Backscatter signal
        ! #################################################################################
@@ -160,14 +158,11 @@ contains
        call cmp_backsignal(nlev,npoints,betatot_ice(1:npoints,icol,1:nlev),&
                       tautot_ice(1:npoints,icol,1:nlev),&
                       pnorm_ice(1:npoints,icol,1:nlev))
-       print*,'  lidar_subcolumn 1b'
        ! Liquid only
        call cmp_backsignal(nlev,npoints,betatot_liq(1:npoints,icol,1:nlev),&
                       tautot_liq(1:npoints,icol,1:nlev),&
                       pnorm_liq(1:npoints,icol,1:nlev))
-       print*,'  lidar_subcolumn 1c'
     enddo
-    print*,'  lidar_subcolumn 2'
 
     ! ####################################################################################
     ! PERDENDICULAR FIELDS
@@ -187,19 +182,16 @@ contains
           pnorm_perp_liq(1:npoints,icol,k) = 1000._wp*Beta*pnorm_liq(1:npoints,icol,k)**2+&
                Gamma2*pnorm_liq(1:npoints,icol,k) 
        enddo
-      print*,'  lidar_subcolumn 2a'
        ! #################################################################################
        ! *) Computation of beta_perp_ice/liq using the lidar equation
        ! #################################################################################
        ! Ice only
        call cmp_beta(nlev,npoints,pnorm_perp_ice(1:npoints,icol,1:nlev),&
               tautot_ice(1:npoints,icol,1:nlev),beta_perp_ice(1:npoints,icol,1:nlev))        
-       print*,'  lidar_subcolumn 2b'
 
        ! Liquid only
        call cmp_beta(nlev,npoints,pnorm_perp_liq(1:npoints,icol,1:nlev),&
             tautot_liq(1:npoints,icol,1:nlev),beta_perp_liq(1:npoints,icol,1:nlev))
-       print*,'  lidar_subcolumn 2c'
 
        ! #################################################################################
        ! *) Perpendicular Backscatter signal
@@ -215,7 +207,6 @@ contains
        ELSEWHERE
           pnorm_perp_tot(1:npoints,icol,1) = 0._wp
        ENDWHERE                                                  
-       print*,'  lidar_subcolumn 2d'
 
        ! Other layers
        do k=2,nlev
@@ -241,7 +232,6 @@ contains
           ENDWHERE
        END DO
     enddo
-    print*,'  lidar_subcolumn 3'
 
   end subroutine lidar_subcolumn
 
@@ -396,7 +386,15 @@ contains
     integer :: k
 
     ! Uppermost layer 
-    pnorm(:,1) = beta(:,1) / (2._wp*tau(:,1)) * (1._wp-exp(-2._wp*tau(:,1)))
+    WHERE ( EXP(-2._wp*tau(:,1)) .gt. 0. )
+       WHERE (tau(:,1) .gt. 0.)
+          pnorm(:,1) = beta(:,1) / (2._wp*tau(:,1)) * (1._wp-exp(-2._wp*tau(:,1)))
+       elsewhere
+          pnorm(:,1) = beta(:,1) * EXP(-2._wp*tau(:,1))
+       endwhere
+    elsewhere
+       pnorm(:,1) = 0._wp
+    endwhere
 
     ! Other layers
     do k=2,nlev
@@ -427,7 +425,18 @@ contains
     real(wp), dimension(npoints) :: tautot_lay
     integer :: k
 
-    beta(:,1) = pnorm(:,1) * (2._wp*tau(:,1))/(1._wp-exp(-2._wp*tau(:,1)))
+    ! Uppermost layer
+    WHERE ( EXP(-2._wp*tau(:,1)) .gt. 0. )
+       WHERE (tau(:,1) .gt. 0. .and. exp(-2._wp*tau(:,1)) .ne. 1._wp)
+          beta(:,1) = pnorm(:,1) * (2._wp*tau(:,1))/(1._wp-exp(-2._wp*tau(:,1)))
+       elsewhere
+          beta(:,1)=pnorm(:,1)/EXP(-2._wp*tau(:,1))
+       endwhere
+    elsewhere
+       beta(:,1) = 0._wp
+    endwhere
+
+    ! Other layers
     do k=2,nlev
        tautot_lay(:) = tau(:,k)-tau(:,k-1)       
        WHERE ( EXP(-2._wp*tau(:,k-1)) .gt. 0. )

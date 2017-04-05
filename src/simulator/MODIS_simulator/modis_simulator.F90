@@ -65,7 +65,7 @@ module mod_modis_sim
    integer, parameter :: &
        num_trial_res = 15              ! Increase to make the linear pseudo-retrieval of size more accurate
 
-   real(wp) :: &
+   real(wp),save :: &
        min_OpticalThickness,          & ! Minimum detectable optical thickness
        CO2Slicing_PressureLimit,      & ! Cloud with higher pressures use thermal methods, units Pa
        CO2Slicing_TauLimit,           & ! How deep into the cloud does CO2 slicing see? 
@@ -80,16 +80,16 @@ module mod_modis_sim
        re_ice_max,                    & ! Minimum effective radius (ice)
        highCloudPressureLimit,        & ! High cloud pressure limit (Pa)
        lowCloudPressureLimit            ! Low cloud pressure limit (Pa)
-  integer :: &
+  integer,save :: &
        phaseIsNone,                   & !
        phaseIsLiquid,                 & !
        phaseIsIce,                    & !
        phaseIsUndetermined              !
  
-  real(wp),dimension(num_trial_res) :: &
+  real(wp),dimension(num_trial_res),save :: &
        trial_re_w, & ! Near-IR optical params vs size for retrieval scheme (liquid)
        trial_re_i    ! Near-IR optical params vs size for retrieval scheme (ice)
-  real(wp),dimension(num_trial_res) :: &
+  real(wp),dimension(num_trial_res),save :: &
        g_w,        & ! Assymettry parameter for size retrieval (liquid)
        g_i,        & ! Assymettry parameter for size retrieval (ice)
        w0_w,       & ! Single-scattering albedo for size retrieval (liquid)

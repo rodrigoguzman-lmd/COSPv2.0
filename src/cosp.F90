@@ -63,7 +63,7 @@ MODULE MOD_COSP
   
   IMPLICIT NONE
   
-  logical :: linitialization ! Initialization flag
+  logical,save :: linitialization ! Initialization flag
   
   ! ######################################################################################
   ! TYPE cosp_column_inputs
@@ -89,9 +89,9 @@ MODULE MOD_COSP
           land,                & ! Land/Sea mask                          (0-1)
           skt                    ! Surface temperature                    (K)
      ! Fields used ONLY by RTTOV
-     integer :: &
+     integer  :: &
           month                  ! Month for surface emissivty atlas      (1-12)
-     real(wp) :: &
+     real(wp)  :: &
           zenang,              & ! Satellite zenith angle for RTTOV       (deg)
           co2,                 & ! CO2                                    (kg/kg)
           ch4,                 & ! Methane                                (kg/kg)
@@ -117,16 +117,16 @@ MODULE MOD_COSP
   ! TYPE cosp_optical_inputs
   ! ######################################################################################  
   type cosp_optical_inputs
-     integer :: &
+     integer  :: &
           Npoints,             & ! Number of gridpoints.
           Ncolumns,            & ! Number of columns.
           Nlevels,             & ! Number of levels.
           Npart,               & ! Number of cloud meteors for LIDAR simulator.
           Nrefl                  ! Number of reflectances for PARASOL simulator
-     real(wp) :: &
+     real(wp)  :: &
           emsfc_lw               ! 11 micron surface emissivity
-     real(wp),allocatable,dimension(:,:,:,:) :: &
-          taupart
+     !real(wp),allocatable,dimension(:,:,:,:) :: &
+     !     taupart
      real(wp),allocatable,dimension(:,:,:) :: &
           frac_out,            & ! Cloud fraction
           tau_067,             & ! Optical depth
@@ -150,7 +150,7 @@ MODULE MOD_COSP
           tau_mol,             & ! Molecular optical depth
           tautot_S_liq,        & ! Liquid water optical thickness, from TOA to SFC
           tautot_S_ice           ! Ice water optical thickness, from TOA to SFC 
-     type(radar_cfg) :: &
+     type(radar_cfg)  :: &
           rcfg_cloudsat         ! Radar comfiguration information (CLOUDSAT)
   end type cosp_optical_inputs
   
@@ -177,22 +177,22 @@ MODULE MOD_COSP
           calipso_srbval           ! SR bins in cfad_sr
      
      ! PARASOL outputs
-     real(wp),dimension(:,:,:),pointer :: &
+     real(wp),dimension(:,:,:),pointer  :: &
           parasolPix_refl            ! PARASOL reflectances (subcolumn)    
-     real(wp),dimension(:,:),pointer :: &
+     real(wp),dimension(:,:),pointer  :: &
           parasolGrid_refl           ! PARASOOL reflectances (column)
 
      ! CLOUDSAT outputs
-     real(wp),dimension(:,:,:),pointer :: &
+     real(wp),dimension(:,:,:),pointer  :: &
           cloudsat_Ze_tot,         & ! Effective reflectivity factor (Npoints,Ncolumns,Nlevels)     
           cloudsat_cfad_ze           ! Ze CFAD(Npoints,dBZe_bins,Nlevels)
-     real(wp), dimension(:,:),pointer :: &
+     real(wp), dimension(:,:),pointer  :: &
           lidar_only_freq_cloud      ! (Npoints,Nlevels)
-     real(wp),dimension(:),pointer :: &
+     real(wp),dimension(:),pointer  :: &
           radar_lidar_tcc            ! Radar&lidar total cloud amount, grid-box scale (Npoints)
           
      ! ISCCP outputs       
-     real(wp),dimension(:),pointer :: &
+     real(wp),dimension(:),pointer  :: &
           isccp_totalcldarea, & ! The fraction of model grid box columns with cloud 
            				        ! somewhere in them. (%)
           isccp_meantb,       & ! Mean all-sky 10.5 micron brightness temperature. (K)
@@ -200,10 +200,10 @@ MODULE MOD_COSP
           isccp_meanptop,     & ! Mean cloud top pressure (mb).
           isccp_meantaucld,   & ! Mean optical thickness. (1)
           isccp_meanalbedocld   ! Mean cloud albedo. (1)
-     real(wp),dimension(:,:),pointer ::&
+     real(wp),dimension(:,:),pointer  ::&
           isccp_boxtau,       & ! Optical thickness in each column. (1)
           isccp_boxptop         ! Cloud top pressure in each column. (mb)
-     real(wp),dimension(:,:,:),pointer :: &
+     real(wp),dimension(:,:,:),pointer  :: &
           isccp_fq              ! The fraction of the model grid box covered by each of
                                 ! the 49 ISCCP D level cloud types. (%)
      
@@ -306,7 +306,7 @@ CONTAINS
          modisMeanLogTauLiquid, modisMeanLogTauIce, modisMeanSizeLiquid,        &        
          modisMeanSizeIce, modisMeanCloudTopPressure, modisMeanLiquidWaterPath, &
          radar_lidar_tcc
-    REAL(WP), dimension(:,:),allocatable  :: &
+    REAL(WP), dimension(:,:),allocatable :: &
          modisRetrievedCloudTopPressure,modisRetrievedTau,modisRetrievedSize,   &
          misr_boxtau,misr_boxztop,misr_dist_model_layertops,isccp_boxtau,       &
          isccp_boxttop,isccp_boxptop,calipso_beta_mol,lidar_only_freq_cloud
@@ -319,7 +319,7 @@ CONTAINS
        t_in,betamol_in,tmpFlip,betamolFlip,pnormFlip,pnorm_perpFlip,ze_totFlip
     real(wp),dimension(20) :: cosp_time
 
-    !if (.not. present(debug_cosp)) debug_cosp=.false.
+    if (.not. present(debug_cosp)) debug_cosp=.false.
 
     call cpu_time(cosp_time(1))
     ! Initialize error reporting for output
@@ -579,14 +579,24 @@ CONTAINS
        modisIN%g         => cospIN%asym
        modisIN%w0        => cospIN%ss_alb
        modisIN%Nsunlit   = count(cospgridIN%sunlit > 0)
-       allocate(modisIN%sunlit(modisIN%Nsunlit),                                         &
-                modisIN%notSunlit(count(cospgridIN%sunlit <= 0)),                        &       
-                modisIN%pres(modisIN%Nsunlit,cospIN%Nlevels+1))             
-       modisIN%sunlit    = pack((/ (i, i = 1, Npoints ) /),                              &
-            mask = cospgridIN%sunlit > 0)
-       modisIN%notSunlit = pack((/ (i, i = 1, Npoints ) /),                              &
-            mask = .not. cospgridIN%sunlit > 0)
-       modisIN%pres      = cospgridIN%phalf(int(modisIN%sunlit(:)),:)
+       if (modisIN%Nsunlit .gt. 0) then
+          allocate(modisIN%sunlit(modisIN%Nsunlit),modisIN%pres(modisIN%Nsunlit,cospIN%Nlevels+1))
+          modisIN%sunlit    = pack((/ (i, i = 1, Npoints ) /),mask = cospgridIN%sunlit > 0)
+          modisIN%pres      = cospgridIN%phalf(int(modisIN%sunlit(:)),:)
+       endif
+       if (count(cospgridIN%sunlit <= 0) .gt. 0) then
+          allocate(modisIN%notSunlit(count(cospgridIN%sunlit <= 0)))
+          modisIN%notSunlit = pack((/ (i, i = 1, Npoints ) /),mask = .not. cospgridIN%sunlit > 0)
+       endif
+
+!       allocate(modisIN%sunlit(modisIN%Nsunlit),                                         &
+!                modisIN%notSunlit(count(cospgridIN%sunlit <= 0)),                        &       
+!                modisIN%pres(modisIN%Nsunlit,cospIN%Nlevels+1))             
+!       modisIN%sunlit    = pack((/ (i, i = 1, Npoints ) /),                              &
+!            mask = cospgridIN%sunlit > 0)
+!       modisIN%notSunlit = pack((/ (i, i = 1, Npoints ) /),                              &
+!            mask = .not. cospgridIN%sunlit > 0)
+!       modisIN%pres      = cospgridIN%phalf(int(modisIN%sunlit(:)),:)
     endif
 
     if (Lrttov_column) then
@@ -625,7 +635,6 @@ CONTAINS
     endif
     call cpu_time(cosp_time(3))
     if (debug_cosp) print*,'   Time to populate simulator imputs:                    ',cosp_time(3)-cosp_time(2)
-    print*,'END section 3'
 
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ! 4) Call subcolumn simulators
@@ -645,6 +654,7 @@ CONTAINS
                              isccpIN%phalf,isccpIN%frac_out,isccpLEVMATCH,               &
                              isccp_boxtau(:,:),isccp_boxptop(:,:),                       &
                              isccp_boxttop(:,:),isccp_meantbclr(:))
+
        ! Store output (if requested)
        if (associated(cospOUT%isccp_boxtau)) then
           cospOUT%isccp_boxtau(ij:ik,:)  = isccp_boxtau
@@ -658,7 +668,6 @@ CONTAINS
    endif
    call cpu_time(cosp_time(4))
    if (debug_cosp) print*,'   Time to run isccp_subcolumn:                          ',cosp_time(4)-cosp_time(3)
-    print*,'END section 3a'
 
    ! MISR subcolumn simulator
     if (Lmisr_subcolumn) then
@@ -677,7 +686,6 @@ CONTAINS
     endif
    call cpu_time(cosp_time(5))
    if (debug_cosp) print*,'   Time to run misr_subcolumn:                           ',cosp_time(5)-cosp_time(4)
-   print*,'END section 3b'
 
     ! Calipso subcolumn simulator
     if (Lcalipso_subcolumn) then
@@ -685,7 +693,6 @@ CONTAINS
        allocate(calipso_beta_mol(calipsoIN%Npoints,calipsoIN%Nlevels),                   &
                 calipso_beta_tot(calipsoIN%Npoints,calipsoIN%Ncolumns,calipsoIN%Nlevels),&
                 calipso_betaperp_tot(calipsoIN%Npoints,calipsoIN%Ncolumns,calipsoIN%Nlevels))
-       print*,'END section 3b.i'
  
        ! Call simulator
        call lidar_subcolumn(calipsoIN%npoints,calipsoIN%ncolumns,calipsoIN%nlevels,      &
@@ -694,22 +701,17 @@ CONTAINS
                             calipsoIN%tautot_ice,calipsoIN%betatot_liq,                  &
                             calipsoIN%tautot_liq,calipso_beta_mol(:,:),                  &
                             calipso_beta_tot(:,:,:),calipso_betaperp_tot(:,:,:))
-       print*,'END section 3b.ii'
        ! Store output (if requested)
        if (associated(cospOUT%calipso_beta_mol))                                         &
             cospOUT%calipso_beta_mol(ij:ik,:) = calipso_beta_mol
-       print*,'END section 3b.iii'
        if (associated(cospOUT%calipso_beta_tot))                                         &
             cospOUT%calipso_beta_tot(ij:ik,:,:) = calipso_beta_tot
-       print*,'END section 3b.iiii'
        if (associated(cospOUT%calipso_betaperp_tot))                                     &
             cospOUT%calipso_betaperp_tot(ij:ik,:,:) = calipso_betaperp_tot
-       print*,'END section 3b.iiiii'
 
     endif
    call cpu_time(cosp_time(6))
    if (debug_cosp) print*,'   Time to run lidar_subcolumn:                          ',cosp_time(6)-cosp_time(5)
-    print*,'END section 3c'
 
     ! PARASOL subcolumn simulator
     if (Lparasol_subcolumn) then
@@ -730,7 +732,6 @@ CONTAINS
     endif    
     call cpu_time(cosp_time(7))
     if (debug_cosp) print*,'   Time to run parasol_subcolumn:                        ',cosp_time(7)-cosp_time(6)
-    print*,'END section 3d'
 
     ! Cloudsat (quickbeam) subcolumn simulator
     if (Lcloudsat_subcolumn) then
@@ -750,7 +751,6 @@ CONTAINS
     endif
     call cpu_time(cosp_time(8))
     if (debug_cosp) print*,'   Time to run radar_subcolumn:                          ',cosp_time(8)-cosp_time(7)
-    print*,'END section 3e'
 
     if (Lmodis_subcolumn) then
        if(modisiN%nSunlit > 0) then 
@@ -761,8 +761,8 @@ CONTAINS
                    modisRetrievedCloudTopPressure(modisIN%nSunlit,modisIN%nColumns))
           ! Call simulator
           do i = 1, modisIN%nSunlit
-             call modis_subcolumn(modisIN%Ncolumns,modisIN%Nlevels,                      &
-                                  modisIN%pres(int(modisIN%sunlit(i)),:),                &
+             call modis_subcolumn(modisIN%Ncolumns,modisIN%Nlevels,modisIN%pres(i,:),    &
+                                  !modisIN%pres(int(modisIN%sunlit(i)),:),                &
                                   modisIN%tau(int(modisIN%sunlit(i)),:,:),               &
                                   modisIN%liqFrac(int(modisIN%sunlit(i)),:,:),           &
                                   modisIN%g(int(modisIN%sunlit(i)),:,:),                 &
@@ -777,8 +777,6 @@ CONTAINS
     endif
     call cpu_time(cosp_time(9))
     if (debug_cosp) print*,'   Time to run modis_subcolum:                           ',cosp_time(9)-cosp_time(8)
-    print*,'END section 4'
-
 
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ! 5) Call column simulators
@@ -813,8 +811,9 @@ CONTAINS
        endif   
                                 
        ! Call simulator
+       where(isccp_boxptop .ne. R_UNDEF) isccp_boxptop=isccp_boxptop/100._wp
        call icarus_column(isccpIN%npoints, isccpIN%ncolumns, isccpIN%nlevels,            &
-                          isccp_boxtau(:,:),isccp_boxptop(:,:)/100._wp,                  &
+                          isccp_boxtau(:,:),isccp_boxptop(:,:),                          &
                           isccpIN%sunlit,isccpIN%pfull,isccpIN%phalf,isccpIN%qv,         &
                           isccpIN%at,isccpIN%skt,isccpIN%emsfc_lw,isccp_boxttop,         &
                           cospOUT%isccp_fq(ij:ik,:,:),                                   &
@@ -822,7 +821,7 @@ CONTAINS
                           cospOUT%isccp_meanptop(ij:ik),cospOUT%isccp_meantaucld(ij:ik), &
                           cospOUT%isccp_totalcldarea(ij:ik),cospOUT%isccp_meantb(ij:ik))
        cospOUT%isccp_fq(ij:ik,:,:) = cospOUT%isccp_fq(ij:ik,:,7:1:-1)
-       
+
        ! Check if there is any value slightly greater than 1
        where ((cospOUT%isccp_totalcldarea > 1.0-1.e-5) .and.                             &
               (cospOUT%isccp_totalcldarea < 1.0+1.e-5))
@@ -830,11 +829,11 @@ CONTAINS
        endwhere
        
        ! Clear up memory (if necessary)
-       if (allocated(isccp_boxttop))   deallocate(isccp_boxttop)
-       if (allocated(isccp_boxptop))   deallocate(isccp_boxptop)
-       if (allocated(isccp_boxtau))    deallocate(isccp_boxtau)
-       if (allocated(isccp_meantbclr)) deallocate(isccp_meantbclr)
-       if (allocated(isccpLEVMATCH))   deallocate(isccpLEVMATCH)
+!       if (allocated(isccp_boxttop))   deallocate(isccp_boxttop)
+!       if (allocated(isccp_boxptop))   deallocate(isccp_boxptop)
+!       if (allocated(isccp_boxtau))    deallocate(isccp_boxtau)
+!       if (allocated(isccp_meantbclr)) deallocate(isccp_meantbclr)
+!       if (allocated(isccpLEVMATCH))   deallocate(isccpLEVMATCH)
        if (allocated(out1D_1)) then
           deallocate(out1D_1)
           nullify(cospOUT%isccp_meanalbedocld)
@@ -885,9 +884,9 @@ CONTAINS
                         cospOUT%misr_meanztop(ij:ik),cospOUT%misr_fq(ij:ik,:,:))              
 
        ! Clear up memory
-       if (allocated(misr_boxtau))               deallocate(misr_boxtau)
-       if (allocated(misr_boxztop))              deallocate(misr_boxztop)
-       if (allocated(misr_dist_model_layertops)) deallocate(misr_dist_model_layertops)   
+!       if (allocated(misr_boxtau))               deallocate(misr_boxtau)
+!       if (allocated(misr_boxztop))              deallocate(misr_boxztop)
+!       if (allocated(misr_dist_model_layertops)) deallocate(misr_dist_model_layertops)   
        if (allocated(out1D_1)) then
           deallocate(out1D_1)
           nullify(cospOUT%misr_cldarea)
@@ -982,7 +981,7 @@ CONTAINS
        call parasol_column(parasolIN%Npoints,PARASOL_NREFL,parasolIN%Ncolumns,           &
                             cospgridIN%land(:),parasolPix_refl(:,:,:),                   &
                             cospOUT%parasolGrid_refl(ij:ik,:))
-       if (allocated(parasolPix_refl)) deallocate(parasolPix_refl)
+!       if (allocated(parasolPix_refl)) deallocate(parasolPix_refl)
     endif
     call cpu_time(cosp_time(13))
     if (debug_cosp) print*,'   Time to run parasol_column:                           ',cosp_time(13)-cosp_time(12)
@@ -1203,35 +1202,35 @@ CONTAINS
              cospOUT%modis_Optical_Thickness_vs_Cloud_Top_Pressure(ij:ik, :, :) = R_UNDEF
        endif
        ! Free up memory (if necessary)
-       if (allocated(modisRetrievedTau))               deallocate(modisRetrievedTau)
-       if (allocated(modisRetrievedSize))              deallocate(modisRetrievedSize)
-       if (allocated(modisRetrievedPhase))             deallocate(modisRetrievedPhase)
-       if (allocated(modisRetrievedCloudTopPressure))  deallocate(modisRetrievedCloudTopPressure)
-       if (allocated(modisCftotal))                    deallocate(modisCftotal)
-       if (allocated(modisCfLiquid))                   deallocate(modisCfLiquid)
-       if (allocated(modisCfIce))                      deallocate(modisCfIce)
-       if (allocated(modisCfHigh))                     deallocate(modisCfHigh)
-       if (allocated(modisCfMid))                      deallocate(modisCfMid)
-       if (allocated(modisCfLow))                      deallocate(modisCfLow)
-       if (allocated(modisMeanTauTotal))               deallocate(modisMeanTauTotal)
-       if (allocated(modisMeanTauLiquid))              deallocate(modisMeanTauLiquid)
-       if (allocated(modisMeanTauIce))                 deallocate(modisMeanTauIce)
-       if (allocated(modisMeanLogTauTotal))            deallocate(modisMeanLogTauTotal)
-       if (allocated(modisMeanLogTauLiquid))           deallocate(modisMeanLogTauLiquid)
-       if (allocated(modisMeanLogTauIce))              deallocate(modisMeanLogTauIce)
-       if (allocated(modisMeanSizeLiquid))             deallocate(modisMeanSizeLiquid)
-       if (allocated(modisMeanSizeIce))                deallocate(modisMeanSizeIce)
-       if (allocated(modisMeanCloudTopPressure))       deallocate(modisMeanCloudTopPressure)
-       if (allocated(modisMeanLiquidWaterPath))        deallocate(modisMeanLiquidWaterPath)
-       if (allocated(modisMeanIceWaterPath))           deallocate(modisMeanIceWaterPath)
-       if (allocated(modisJointHistogram))             deallocate(modisJointHistogram)
-       if (allocated(modisJointHistogramIce))          deallocate(modisJointHistogramIce)
-       if (allocated(modisJointHistogramLiq))          deallocate(modisJointHistogramLiq)
-       if (allocated(isccp_boxttop))                   deallocate(isccp_boxttop)
-       if (allocated(isccp_boxptop))                   deallocate(isccp_boxptop)
-       if (allocated(isccp_boxtau))                    deallocate(isccp_boxtau)
-       if (allocated(isccp_meantbclr))                 deallocate(isccp_meantbclr)
-       if (allocated(isccpLEVMATCH))                   deallocate(isccpLEVMATCH)
+!       if (allocated(modisRetrievedTau))               deallocate(modisRetrievedTau)
+!       if (allocated(modisRetrievedSize))              deallocate(modisRetrievedSize)
+!       if (allocated(modisRetrievedPhase))             deallocate(modisRetrievedPhase)
+!       if (allocated(modisRetrievedCloudTopPressure))  deallocate(modisRetrievedCloudTopPressure)
+!       if (allocated(modisCftotal))                    deallocate(modisCftotal)
+!       if (allocated(modisCfLiquid))                   deallocate(modisCfLiquid)
+!       if (allocated(modisCfIce))                      deallocate(modisCfIce)
+!       if (allocated(modisCfHigh))                     deallocate(modisCfHigh)
+!       if (allocated(modisCfMid))                      deallocate(modisCfMid)
+!       if (allocated(modisCfLow))                      deallocate(modisCfLow)
+!       if (allocated(modisMeanTauTotal))               deallocate(modisMeanTauTotal)
+!       if (allocated(modisMeanTauLiquid))              deallocate(modisMeanTauLiquid)
+!       if (allocated(modisMeanTauIce))                 deallocate(modisMeanTauIce)
+!       if (allocated(modisMeanLogTauTotal))            deallocate(modisMeanLogTauTotal)
+!       if (allocated(modisMeanLogTauLiquid))           deallocate(modisMeanLogTauLiquid)
+!       if (allocated(modisMeanLogTauIce))              deallocate(modisMeanLogTauIce)
+!       if (allocated(modisMeanSizeLiquid))             deallocate(modisMeanSizeLiquid)
+!       if (allocated(modisMeanSizeIce))                deallocate(modisMeanSizeIce)
+!       if (allocated(modisMeanCloudTopPressure))       deallocate(modisMeanCloudTopPressure)
+!       if (allocated(modisMeanLiquidWaterPath))        deallocate(modisMeanLiquidWaterPath)
+!       if (allocated(modisMeanIceWaterPath))           deallocate(modisMeanIceWaterPath)
+!       if (allocated(modisJointHistogram))             deallocate(modisJointHistogram)
+!       if (allocated(modisJointHistogramIce))          deallocate(modisJointHistogramIce)
+!       if (allocated(modisJointHistogramLiq))          deallocate(modisJointHistogramLiq)
+!       if (allocated(isccp_boxttop))                   deallocate(isccp_boxttop)
+!       if (allocated(isccp_boxptop))                   deallocate(isccp_boxptop)
+!       if (allocated(isccp_boxtau))                    deallocate(isccp_boxtau)
+!       if (allocated(isccp_meantbclr))                 deallocate(isccp_meantbclr)
+!       if (allocated(isccpLEVMATCH))                   deallocate(isccpLEVMATCH)
     endif
     call cpu_time(cosp_time(15))
     if (debug_cosp) print*,'   Time to run modis_column:                             ',cosp_time(15)-cosp_time(14)
@@ -1253,7 +1252,6 @@ CONTAINS
     endif
     call cpu_time(cosp_time(16))
     if (debug_cosp) print*,'   Time to run rttov_column:                             ',cosp_time(16)-cosp_time(15)
-    print*,'END section 5'
 
     !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ! 6) Compute multi-instrument products
@@ -1309,8 +1307,8 @@ CONTAINS
                                      Nlvgrid,tmpFlip,pnormFlip,pnorm_perpFlip,           &
                                      betamolFlip,Ze_totFlip,                             &
                                      lidar_only_freq_cloud,radar_lidar_tcc)                                            
-          deallocate(t_in,betamol_in,tmpFlip,betamolFlip,pnormFlip,pnorm_perpFlip,       &
-                     ze_totFlip)
+          !deallocate(t_in,betamol_in,tmpFlip,betamolFlip,pnormFlip,pnorm_perpFlip,       &
+          !           ze_totFlip)
        else
           allocate(lidar_only_freq_cloud(cloudsatIN%Npoints,cloudsatIN%Nlevels),         &
                radar_lidar_tcc(cloudsatIN%Npoints))
@@ -1334,16 +1332,97 @@ CONTAINS
     endif
     call cpu_time(cosp_time(17))
     if (debug_cosp) print*,'   Time to create joint products:                        ',cosp_time(17)-cosp_time(16)
-    print*,'END section 6'
 
     ! Cleanup 
-    if (allocated(calipso_beta_tot))      deallocate(calipso_beta_tot)
-    if (allocated(calipso_beta_mol))      deallocate(calipso_beta_mol)
-    if (allocated(calipso_betaperp_tot))  deallocate(calipso_betaperp_tot)
-    if (allocated(cloudsatDBZe))          deallocate(cloudsatDBZe)
-    if (allocated(lidar_only_freq_cloud)) deallocate(lidar_only_freq_cloud)
-    if (allocated(radar_lidar_tcc))       deallocate(radar_lidar_tcc)
-    print*,'END section 7'
+    !if (allocated(calipso_beta_tot))      deallocate(calipso_beta_tot)
+    !if (allocated(calipso_beta_mol))      deallocate(calipso_beta_mol)
+    !if (allocated(calipso_betaperp_tot))  deallocate(calipso_betaperp_tot)
+    !if (allocated(cloudsatDBZe))          deallocate(cloudsatDBZe)
+    !if (allocated(lidar_only_freq_cloud)) deallocate(lidar_only_freq_cloud)
+    !if (allocated(radar_lidar_tcc))       deallocate(radar_lidar_tcc)
+    if (associated(calipsoIN%Npoints))      nullify(calipsoIN%Npoints)
+    if (associated(calipsoIN%Ncolumns))     nullify(calipsoIN%Ncolumns)
+    if (associated(calipsoIN%Nlevels))      nullify(calipsoIN%Nlevels)
+    if (associated(calipsoIN%beta_mol))     nullify(calipsoIN%beta_mol)
+    if (associated(calipsoIN%betatot))      nullify(calipsoIN%betatot)
+    if (associated(calipsoIN%betatot_liq))  nullify(calipsoIN%betatot_liq)
+    if (associated(calipsoIN%betatot_ice))  nullify(calipsoIN%betatot_ice)
+    if (associated(calipsoIN%tau_mol))      nullify(calipsoIN%tau_mol)
+    if (associated(calipsoIN%tautot))       nullify(calipsoIN%tautot)
+    if (associated(calipsoIN%tautot_liq))   nullify(calipsoIN%tautot_liq)
+    if (associated(calipsoIN%tautot_ice))   nullify(calipsoIN%tautot_ice)
+    if (associated(isccpIN%Npoints))        nullify(isccpIN%Npoints)
+    if (associated(isccpIN%Ncolumns))       nullify(isccpIN%Ncolumns)
+    if (associated(isccpIN%Nlevels))        nullify(isccpIN%Nlevels)
+    if (associated(isccpIN%emsfc_lw))       nullify(isccpIN%emsfc_lw)
+    if (associated(isccpIN%skt))            nullify(isccpIN%skt)
+    if (associated(isccpIN%qv))             nullify(isccpIN%qv)
+    if (associated(isccpIN%at))             nullify(isccpIN%at)
+    if (associated(isccpIN%frac_out))       nullify(isccpIN%frac_out)
+    if (associated(isccpIN%dtau))           nullify(isccpIN%dtau)
+    if (associated(isccpIN%dem))            nullify(isccpIN%dem)
+    if (associated(isccpIN%phalf))          nullify(isccpIN%phalf)
+    if (associated(isccpIN%sunlit))         nullify(isccpIN%sunlit)
+    if (associated(isccpIN%pfull))          nullify(isccpIN%pfull)
+    if (associated(misrIN%Npoints))         nullify(misrIN%Npoints)
+    if (associated(misrIN%Ncolumns))        nullify(misrIN%Ncolumns)
+    if (associated(misrIN%Nlevels))         nullify(misrIN%Nlevels)
+    if (associated(misrIN%dtau))            nullify(misrIN%dtau)
+    if (associated(misrIN%sunlit))          nullify(misrIN%sunlit)
+    if (associated(misrIN%zfull))           nullify(misrIN%zfull)
+    if (associated(misrIN%at))              nullify(misrIN%at)
+    if (associated(parasolIN%Npoints))      nullify(parasolIN%Npoints)
+    if (associated(parasolIN%Nlevels))      nullify(parasolIN%Nlevels)
+    if (associated(parasolIN%Ncolumns))     nullify(parasolIN%Ncolumns)
+    if (associated(parasolIN%Nrefl))        nullify(parasolIN%Nrefl)
+    if (associated(parasolIN%tautot_S_liq)) nullify(parasolIN%tautot_S_liq)
+    if (associated(parasolIN%tautot_S_ice)) nullify(parasolIN%tautot_S_ice)
+    if (associated(cloudsatIN%Npoints))     nullify(cloudsatIN%Npoints)
+    if (associated(cloudsatIN%Nlevels))     nullify(cloudsatIN%Nlevels)
+    if (associated(cloudsatIN%Ncolumns))    nullify(cloudsatIN%Ncolumns)
+    if (associated(cloudsatIN%z_vol))       nullify(cloudsatIN%z_vol)
+    if (associated(cloudsatIN%kr_vol))      nullify(cloudsatIN%kr_vol)
+    if (associated(cloudsatIN%g_vol))       nullify(cloudsatIN%g_vol)
+    if (associated(cloudsatIN%rcfg))        nullify(cloudsatIN%rcfg)
+    if (associated(cloudsatIN%hgt_matrix))  nullify(cloudsatIN%hgt_matrix)
+    if (associated(modisIN%Ncolumns))       nullify(modisIN%Ncolumns)
+    if (associated(modisIN%Nlevels))        nullify(modisIN%Nlevels)
+    if (associated(modisIN%Npoints))        nullify(modisIN%Npoints)
+    if (associated(modisIN%liqFrac))        nullify(modisIN%liqFrac)
+    if (associated(modisIN%tau))            nullify(modisIN%tau)
+    if (associated(modisIN%g))              nullify(modisIN%g)
+    if (associated(modisIN%w0))             nullify(modisIN%w0)
+    if (associated(rttovIN%nPoints))        nullify(rttovIN%nPoints)
+    if (associated(rttovIN%nLevels))        nullify(rttovIN%nLevels)
+    if (associated(rttovIN%nSubCols))       nullify(rttovIN%nSubCols)
+    if (associated(rttovIN%zenang))         nullify(rttovIN%zenang)
+    if (associated(rttovIN%co2))            nullify(rttovIN%co2)
+    if (associated(rttovIN%ch4))            nullify(rttovIN%ch4)
+    if (associated(rttovIN%n2o))            nullify(rttovIN%n2o)
+    if (associated(rttovIN%co))             nullify(rttovIN%co)
+    if (associated(rttovIN%surfem))         nullify(rttovIN%surfem)
+    if (associated(rttovIN%h_surf))         nullify(rttovIN%h_surf)
+    if (associated(rttovIN%u_surf))         nullify(rttovIN%u_surf)
+    if (associated(rttovIN%v_surf))         nullify(rttovIN%v_surf)
+    if (associated(rttovIN%t_skin))         nullify(rttovIN%t_skin)
+    if (associated(rttovIN%p_surf))         nullify(rttovIN%p_surf)
+    if (associated(rttovIN%q2m))            nullify(rttovIN%q2m)
+    if (associated(rttovIN%t2m))            nullify(rttovIN%t2m)
+    if (associated(rttovIN%lsmask))         nullify(rttovIN%lsmask)
+    if (associated(rttovIN%latitude))       nullify(rttovIN%latitude)
+    if (associated(rttovIN%longitude))      nullify(rttovIN%longitude)
+    if (associated(rttovIN%seaice))         nullify(rttovIN%seaice)
+    if (associated(rttovIN%p))              nullify(rttovIN%p)
+    if (associated(rttovIN%ph))             nullify(rttovIN%ph)
+    if (associated(rttovIN%t))              nullify(rttovIN%t)
+    if (associated(rttovIN%q))              nullify(rttovIN%q)
+    if (associated(rttovIN%o3))             nullify(rttovIN%o3)
+    if (associated(rttovIN%month))          nullify(rttovIN%month)
+    if (associated(rttovIN%tca))            nullify(rttovIN%tca)
+    if (associated(rttovIN%cldIce))         nullify(rttovIN%cldIce)
+    if (associated(rttovIN%cldLiq))         nullify(rttovIN%cldLiq)
+    if (associated(rttovIN%fl_rain))        nullify(rttovIN%fl_rain)
+    if (associated(rttovIN%fl_snow))        nullify(rttovIN%fl_snow)
 
   end function COSP_SIMULATOR
 
@@ -1353,7 +1432,7 @@ CONTAINS
   SUBROUTINE COSP_INIT(Lisccp,Lmodis,Lmisr,Lcloudsat,Lcalipso,Lparasol,Lrttov,           &
                        cloudsat_radar_freq,cloudsat_k2,cloudsat_use_gas_abs,             &
                        cloudsat_do_ray,isccp_top_height,isccp_top_height_direction,      &
-                       surface_radar,rcfg,lusevgrid,luseCSATvgrid,Nvgrid,                &
+                       surface_radar,rcfg,lusevgrid,luseCSATvgrid,Nvgrid,nLevels,        &
                        cloudsat_micro_scheme,cospOUT)
     
     ! INPUTS
@@ -1364,6 +1443,7 @@ CONTAINS
          isccp_top_height,           & !
          isccp_top_height_direction, & !
          Nvgrid,                     & ! Number of levels for new L3 grid
+         Nlevels,                    & ! Number of levels in native grid.
          surface_radar
     real(wp),intent(in) :: &
          cloudsat_radar_freq,        & !
@@ -1495,7 +1575,7 @@ CONTAINS
              y%betatot_liq(npoints,ncolumns,nlevels),y%tautot(npoints,ncolumns,nlevels), &
              y%tautot_ice(npoints,ncolumns,nlevels), y%tautot_S_ice(npoints,nlevels),    &
              y%tautot_liq(npoints,ncolumns,nlevels), y%tautot_S_liq(npoints,nlevels),    &
-             y%taupart(npoints,ncolumns,nlevels,4),                                      &
+             !y%taupart(npoints,ncolumns,nlevels,4),                                      &
              y%z_vol_cloudsat(npoints,Ncolumns,nlevels),                                 &
              y%kr_vol_cloudsat(npoints,Ncolumns,nlevels),                                &
              y%g_vol_cloudsat(npoints,Ncolumns,nlevels),                                 &
@@ -1523,8 +1603,8 @@ CONTAINS
                 y%cloudIce(nPoints,nLevels),y%cloudLiq(nPoints,nLevels),                    &
                 y%fl_snow(nPoints,nLevels),y%fl_rain(nPoints,nLevels),y%seaice(npoints),    &
                 y%tca(nPoints,nLevels),y%hgt_matrix_half(npoints,nlevels+1))
-    ! No RTTOV
     else
+       ! No RTTOV
        allocate(y%sunlit(npoints),y%skt(npoints),y%land(npoints),y%at(npoints,nlevels),     &
                 y%pfull(npoints,nlevels),y%phalf(npoints,nlevels+1),y%qv(npoints,nlevels),  &
                 y%o3(npoints,nlevels),y%hgt_matrix(npoints,nlevels),y%u_sfc(npoints),       &
@@ -1738,28 +1818,63 @@ CONTAINS
  
   end subroutine construct_cosp_outputs
   
-  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   ! SUBROUTINE destroy_cospIN     
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   subroutine destroy_cospIN(y)
     type(cosp_optical_inputs),intent(inout) :: y
-    deallocate(y%tau_067,y%emiss_11,y%frac_out,y%beta_mol,y%tau_mol,y%betatot,           &
-               y%betatot_ice,y%betatot_liq,y%tautot,y%tautot_ice,y%tautot_liq,           &
-               y%tautot_S_liq,y%tautot_S_ice,y%z_vol_cloudsat,y%kr_vol_cloudsat,         &
-               y%g_vol_cloudsat,y%asym,y%ss_alb,y%fracLiq,y%taupart,y%tau_067_snow,      &
-               y%emiss_11_snow)
+    if (allocated(y%emiss_11_snow))   deallocate(y%emiss_11_snow)
+    if (allocated(y%tau_067_snow))    deallocate(y%tau_067_snow)
+    !if (allocated(y%taupart))         deallocate(y%taupart)
+    if (allocated(y%fracLiq))         deallocate(y%fracLiq)
+    if (allocated(y%ss_alb))          deallocate(y%ss_alb)
+    if (allocated(y%asym))            deallocate(y%asym)
+    if (allocated(y%g_vol_cloudsat))  deallocate(y%g_vol_cloudsat)
+    if (allocated(y%kr_vol_cloudsat)) deallocate(y%kr_vol_cloudsat)
+    if (allocated(y%z_vol_cloudsat))  deallocate(y%z_vol_cloudsat)
+    if (allocated(y%tautot_S_ice))    deallocate(y%tautot_S_ice)
+    if (allocated(y%tautot_S_liq))    deallocate(y%tautot_S_liq)
+    if (allocated(y%tautot_liq))      deallocate(y%tautot_liq)
+    if (allocated(y%tautot_ice))      deallocate(y%tautot_ice)
+    if (allocated(y%tautot))          deallocate(y%tautot)
+    if (allocated(y%betatot_liq))     deallocate(y%betatot_liq)
+    if (allocated(y%betatot_ice))     deallocate(y%betatot_ice)
+    if (allocated(y%betatot))         deallocate(y%betatot)
+    if (allocated(y%tau_mol))         deallocate(y%tau_mol)
+    if (allocated(y%beta_mol))        deallocate(y%beta_mol)
+    if (allocated(y%frac_out))        deallocate(y%frac_out)
+    if (allocated(y%emiss_11))        deallocate(y%emiss_11)
+    if (allocated(y%tau_067))         deallocate(y%tau_067)
 
   end subroutine destroy_cospIN
+
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   ! SUBROUTINE destroy_cospstateIN     
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
   subroutine destroy_cospstateIN(y)
     type(cosp_column_inputs),intent(inout) :: y
-    deallocate(y%sunlit,y%skt,y%land,y%at,y%pfull ,y%phalf,y%qv,y%o3,y%hgt_matrix,       &
-               y%u_sfc,y%v_sfc,y%lat,y%lon,y%cloudIce,y%cloudLiq,y%seaice,               &
-               y%fl_rain,y%fl_snow,y%tca,y%hgt_matrix_half)
-    ! RTTOV
-    if (allocated(y%emis_sfc)) deallocate(y%emis_sfc)
+
+    if (allocated(y%hgt_matrix_half)) deallocate(y%hgt_matrix_half)
+    if (allocated(y%tca))             deallocate(y%tca)
+    if (allocated(y%fl_snow))         deallocate(y%fl_snow)
+    if (allocated(y%fl_rain))         deallocate(y%fl_rain)
+    if (allocated(y%seaice))          deallocate(y%seaice)
+    if (allocated(y%cloudLiq))        deallocate(y%cloudLiq)
+    if (allocated(y%cloudIce))        deallocate(y%cloudIce)
+    if (allocated(y%emis_sfc))        deallocate(y%emis_sfc)
+    if (allocated(y%lon))             deallocate(y%lon)
+    if (allocated(y%lat))             deallocate(y%lat)
+    if (allocated(y%v_sfc))           deallocate(y%v_sfc)
+    if (allocated(y%u_sfc))           deallocate(y%u_sfc)
+    if (allocated(y%hgt_matrix))      deallocate(y%hgt_matrix)
+    if (allocated(y%o3))              deallocate(y%o3)
+    if (allocated(y%qv))              deallocate(y%qv)
+    if (allocated(y%phalf))           deallocate(y%phalf)
+    if (allocated(y%pfull))           deallocate(y%pfull)
+    if (allocated(y%at))              deallocate(y%at)
+    if (allocated(y%land))            deallocate(y%land)
+    if (allocated(y%skt))             deallocate(y%skt)
+    if (allocated(y%sunlit))          deallocate(y%sunlit)
 
   end subroutine destroy_cospstateIN
   

@@ -210,13 +210,13 @@ MODULE MOD_COSP_CONFIG
 
     ! For the MODIS simulator we want to preserve the ability for cospV1.4.0 to use the
     ! old histogram bin boundaries for optical depth, so these are set up in initialization.
-    integer :: &
+    integer,save :: &
          numMODISTauBins          ! Number of tau bins for joint-histogram
-    real(wp),allocatable,dimension(:) :: &
+    real(wp),allocatable,dimension(:),save :: &
          modis_histTau            ! Joint-histogram boundaries (optical depth)
-    real(wp),allocatable,dimension(:,:) :: &
+    real(wp),allocatable,dimension(:,:),save :: &
          modis_histTauEdges       ! Joint-histogram bin edges (optical depth)
-    real(wp),allocatable,dimension(:) :: &
+    real(wp),allocatable,dimension(:),save :: &
          modis_histTauCenters     ! Joint-histogram bin centers (optical depth)
     
     ! ####################################################################################
@@ -307,9 +307,9 @@ MODULE MOD_COSP_CONFIG
     ! ####################################################################################
     ! New vertical grid used by CALIPSO and CLOUDSAT L3 (set up during initialization)
     ! ####################################################################################
-    integer :: &
+    integer,save :: &
        Nlvgrid      ! Number of levels in New grid
-    real(wp),dimension(:),allocatable :: &
+    real(wp),dimension(:),allocatable,save :: &
        vgrid_zl,  & ! New grid bottoms
        vgrid_zu,  & ! New grid tops
        vgrid_z!,   & ! New grid center

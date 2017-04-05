@@ -113,7 +113,7 @@ modis_simulator.o : $(MODIS_PATH)/modis_simulator.F90
 	$(F90) $(F90FLAGS) -c $<
 
 cosp_rttov_interfaceSTUB.o : $(COSP_PATH)/src/simulator/cosp_rttov_interfaceSTUB.F90
-	$(F90) $(F90FLAGS) -c -I $(RTTOV_INC_PATH) -I $(RTTOV_MOD_PATH) $<
+	$(F90) $(F90FLAGS) -c $<
 
 cosp_misr_interface.o : $(COSP_PATH)/src/simulator/cosp_misr_interface.F90
 	$(F90) $(F90FLAGS) -c $<
@@ -134,7 +134,7 @@ cosp_parasol_interface.o : $(COSP_PATH)/src/simulator/cosp_parasol_interface.F90
 	$(F90) $(F90FLAGS) -c $<
 
 cosp_rttovSTUB.o : $(RT_PATH)/cosp_rttovSTUB.F90 
-	$(F90) $(F90FLAGS) -c -I $(RTTOV_INC_PATH) -I $(RTTOV_MOD_PATH) $<
+	$(F90) $(F90FLAGS) -c $<
 
 lidar_simulator.o : $(CS_PATH)/lidar_simulator.F90
 	$(F90) $(F90FLAGS) -c $<

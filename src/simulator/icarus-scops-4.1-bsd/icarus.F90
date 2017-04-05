@@ -42,7 +42,7 @@ MODULE MOD_ICARUS
        ncolprint = 0 ! Flag for debug printing (set as parameter to increase performance)
 
   ! Cloud-top height determination
-  integer :: &
+  integer,save :: &
        isccp_top_height,          & ! Top height adjustment method
        isccp_top_height_direction   ! Direction for finding atmosphere pressure level
 
@@ -306,9 +306,14 @@ contains
           
           do ibox=1,ncol
              ! Emissivity
-             dem(1:npoints,ibox) = merge(dem_wv(1:npoints,ilev), &
-                                         1._wp-(1._wp-demIN(1:npoints,ibox,ilev))*(1._wp-dem_wv(1:npoints,ilev)), &
-                                         demIN(1:npoints,ibox,ilev) .eq. 0)
+             where(demIN(1:npoints,ibox,ilev) .eq. 0) 
+                dem(1:npoints,ibox) =  dem_wv(1:npoints,ilev)
+             elsewhere
+                dem(1:npoints,ibox) = 1._wp-(1._wp-demIN(1:npoints,ibox,ilev))*(1._wp-dem_wv(1:npoints,ilev))
+             endwhere
+             !dem(1:npoints,ibox) = merge(dem_wv(1:npoints,ilev), &
+             !                            1._wp-(1._wp-demIN(1:npoints,ibox,ilev))*(1._wp-dem_wv(1:npoints,ilev)), &
+             !                            demIN(1:npoints,ibox,ilev) .eq. 0)
 
              ! Increase TOA flux emitted from layer
              fluxtop(1:npoints,ibox) = fluxtop(1:npoints,ibox) + dem(1:npoints,ibox)*bb*trans_layers_above(1:npoints,ibox) 
@@ -582,7 +587,7 @@ contains
        box_cloudy2(1:ncol) = merge(.true.,.false.,boxtau(j,1:ncol) .gt. tauchk .and. boxptop(j,1:ncol) .gt. 0.)
 
        ! Compute joint histogram and column quantities for points that are sunlit and cloudy
-       if (sunlit(j) .eq.1 .or. isccp_top_height .eq. 3) then 
+      if (sunlit(j) .eq.1 .or. isccp_top_height .eq. 3) then 
           ! Joint-histogram
           call hist2D(boxtau(j,1:ncol),boxptop(j,1:ncol),ncol,isccp_histTau,numISCCPTauBins, &
                isccp_histPres,numISCCPPresBins,fq_isccp(j,1:numISCCPTauBins,1:numISCCPPresBins))
@@ -593,9 +598,14 @@ contains
           totalcldarea(j) = real(count(box_cloudy2(1:ncol) .and. boxtau(j,1:ncol) .gt. isccp_taumin))/ncol
              
           ! Subcolumn cloud albedo
-          albedocld(j,1:ncol) = merge((boxtau(j,1:ncol)**0.895_wp)/((boxtau(j,1:ncol)**0.895_wp)+6.82_wp),&
-               0._wp,box_cloudy2(1:ncol) .and. boxtau(j,1:ncol) .gt. isccp_taumin)
-          
+!DJS          albedocld(j,1:ncol) = merge((boxtau(j,1:ncol)**0.895_wp)/((boxtau(j,1:ncol)**0.895_wp)+6.82_wp),&
+!DJS               0._wp,box_cloudy2(1:ncol) .and. boxtau(j,1:ncol) .gt. isccp_taumin)
+          where(box_cloudy2(1:ncol) .and. boxtau(j,1:ncol) .gt. isccp_taumin)
+             albedocld(j,1:ncol) = (boxtau(j,1:ncol)**0.895_wp)/((boxtau(j,1:ncol)**0.895_wp)+6.82_wp)
+          elsewhere
+             albedocld(j,1:ncol) = 0._wp
+          endwhere
+
           ! Column cloud albedo
           meanalbedocld(j) = sum(albedocld(j,1:ncol))/ncol
           
@@ -605,12 +615,21 @@ contains
     enddo
     
     ! Compute mean cloud properties. Set to mssing value in the event that totalcldarea=0
-    meanptop(1:npoints)      = merge(100._wp*meanptop(1:npoints)/totalcldarea(1:npoints),&
-                                     output_missing_value,totalcldarea(1:npoints) .gt. 0)
-    meanalbedocld(1:npoints) = merge(meanalbedocld(1:npoints)/totalcldarea(1:npoints), &
-                                     output_missing_value,totalcldarea(1:npoints) .gt. 0)
-    meantaucld(1:npoints)    = merge((6.82_wp/((1._wp/meanalbedocld(1:npoints))-1.))**(1._wp/0.895_wp), &
-                                     output_missing_value,totalcldarea(1:npoints) .gt. 0)
+    where (totalcldarea(1:npoints) .gt. 0)
+       meanptop(1:npoints)      = 100._wp*meanptop(1:npoints)/totalcldarea(1:npoints)
+       meanalbedocld(1:npoints) = meanalbedocld(1:npoints)/totalcldarea(1:npoints)
+       meantaucld(1:npoints)    = (6.82_wp/((1._wp/meanalbedocld(1:npoints))-1.))**(1._wp/0.895_wp)
+    elsewhere
+       meanptop(1:npoints)      = output_missing_value
+       meanalbedocld(1:npoints) = output_missing_value
+       meantaucld(1:npoints)    = output_missing_value
+    endwhere
+!DJS    meanptop(1:npoints)      = merge(100._wp*meanptop(1:npoints)/totalcldarea(1:npoints),&
+!DJS                                     output_missing_value,totalcldarea(1:npoints) .gt. 0)
+!DJS    meanalbedocld(1:npoints) = merge(meanalbedocld(1:npoints)/totalcldarea(1:npoints), &
+!DJS                                     output_missing_value,totalcldarea(1:npoints) .gt. 0)
+!DJS    meantaucld(1:npoints)    = merge((6.82_wp/((1._wp/meanalbedocld(1:npoints))-1.))**(1._wp/0.895_wp), &
+!DJS                                     output_missing_value,totalcldarea(1:npoints) .gt. 0)
 
     ! Represent in percent
     where(totalcldarea .ne. output_missing_value) totalcldarea = totalcldarea*100._wp
