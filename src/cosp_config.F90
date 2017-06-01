@@ -157,9 +157,33 @@ MODULE MOD_COSP_CONFIG
     ! Constants used by the PARASOL simulator   
     ! ####################################################################################  
     integer,parameter :: &
-       PARASOL_NREFL = 5    ! Number of parasol reflectances
+         PARASOL_NREFL = 5    ! Number of parasol reflectances
     real(wp),parameter,dimension(PARASOL_NREFL) :: &
-       PARASOL_SZA = (/0.0, 20.0, 40.0, 60.0, 80.0/)    
+         PARASOL_SZA = (/0.0, 20.0, 40.0, 60.0, 80.0/)    
+    integer,parameter :: &
+         PARASOL_NTAU = 7     ! Number of optical depths in LUT
+    real(wp),parameter,dimension(PARASOL_NTAU) :: &
+         PARASOL_TAU = (/0., 1., 5., 10., 20., 50., 100./)
+    ! LUTs
+    REAL(WP),parameter,dimension(PARASOL_NREFL,PARASOL_NTAU) :: &
+         ! LUT for spherical liquid particles
+         rlumA = reshape(source=(/ 0.03,     0.03,     0.03,     0.03,     0.03,           &
+                                   0.090886, 0.072185, 0.058410, 0.052498, 0.034730,       &
+                                   0.283965, 0.252596, 0.224707, 0.175844, 0.064488,       &
+                                   0.480587, 0.436401, 0.367451, 0.252916, 0.081667,       &
+                                   0.695235, 0.631352, 0.509180, 0.326551, 0.098215,       &
+                                   0.908229, 0.823924, 0.648152, 0.398581, 0.114411,       &
+                                   1.0,      0.909013, 0.709554, 0.430405, 0.121567/),     &
+                                   shape=(/PARASOL_NREFL,PARASOL_NTAU/)), & 
+	 ! LUT for ice particles         			     
+         rlumB = reshape(source=(/ 0.03,     0.03,     0.03,     0.03,     0.03,           &
+                                   0.092170, 0.087082, 0.083325, 0.084935, 0.054157,       &
+                                   0.311941, 0.304293, 0.285193, 0.233450, 0.089911,       &
+                                   0.511298, 0.490879, 0.430266, 0.312280, 0.107854,       &
+                                   0.712079, 0.673565, 0.563747, 0.382376, 0.124127,       &
+                                   0.898243, 0.842026, 0.685773, 0.446371, 0.139004,       &
+                                   0.976646, 0.912966, 0.737154, 0.473317, 0.145269/),     &
+                                   shape=(/PARASOL_NREFL,PARASOL_NTAU/)) 
 
     ! ####################################################################################
     ! ISCCP simulator tau/CTP joint histogram information
@@ -210,13 +234,13 @@ MODULE MOD_COSP_CONFIG
 
     ! For the MODIS simulator we want to preserve the ability for cospV1.4.0 to use the
     ! old histogram bin boundaries for optical depth, so these are set up in initialization.
-    integer,save :: &
+    integer :: &
          numMODISTauBins          ! Number of tau bins for joint-histogram
-    real(wp),allocatable,dimension(:),save :: &
+    real(wp),allocatable,dimension(:) :: &
          modis_histTau            ! Joint-histogram boundaries (optical depth)
-    real(wp),allocatable,dimension(:,:),save :: &
+    real(wp),allocatable,dimension(:,:) :: &
          modis_histTauEdges       ! Joint-histogram bin edges (optical depth)
-    real(wp),allocatable,dimension(:),save :: &
+    real(wp),allocatable,dimension(:) :: &
          modis_histTauCenters     ! Joint-histogram bin centers (optical depth)
     
     ! ####################################################################################
@@ -307,14 +331,12 @@ MODULE MOD_COSP_CONFIG
     ! ####################################################################################
     ! New vertical grid used by CALIPSO and CLOUDSAT L3 (set up during initialization)
     ! ####################################################################################
-    integer,save :: &
+    integer :: &
        Nlvgrid      ! Number of levels in New grid
-    real(wp),dimension(:),allocatable,save :: &
+    real(wp),dimension(:),allocatable :: &
        vgrid_zl,  & ! New grid bottoms
        vgrid_zu,  & ! New grid tops
-       vgrid_z!,   & ! New grid center
-       !mgrid_zl,  & ! Model grid botton
-       !mgrid_zu,  & ! Model grid tops
-       !mgrid_z      ! Model grid center
+       vgrid_z      ! New grid center
+
 
 END MODULE MOD_COSP_CONFIG

@@ -65,7 +65,7 @@ module mod_modis_sim
    integer, parameter :: &
        num_trial_res = 15              ! Increase to make the linear pseudo-retrieval of size more accurate
 
-   real(wp),save :: &
+   real(wp) :: &
        min_OpticalThickness,          & ! Minimum detectable optical thickness
        CO2Slicing_PressureLimit,      & ! Cloud with higher pressures use thermal methods, units Pa
        CO2Slicing_TauLimit,           & ! How deep into the cloud does CO2 slicing see? 
@@ -80,16 +80,16 @@ module mod_modis_sim
        re_ice_max,                    & ! Minimum effective radius (ice)
        highCloudPressureLimit,        & ! High cloud pressure limit (Pa)
        lowCloudPressureLimit            ! Low cloud pressure limit (Pa)
-  integer,save :: &
+  integer :: &
        phaseIsNone,                   & !
        phaseIsLiquid,                 & !
        phaseIsIce,                    & !
        phaseIsUndetermined              !
  
-  real(wp),dimension(num_trial_res),save :: &
+  real(wp),dimension(num_trial_res) :: &
        trial_re_w, & ! Near-IR optical params vs size for retrieval scheme (liquid)
        trial_re_i    ! Near-IR optical params vs size for retrieval scheme (ice)
-  real(wp),dimension(num_trial_res),save :: &
+  real(wp),dimension(num_trial_res) :: &
        g_w,        & ! Assymettry parameter for size retrieval (liquid)
        g_i,        & ! Assymettry parameter for size retrieval (ice)
        w0_w,       & ! Single-scattering albedo for size retrieval (liquid)
@@ -112,7 +112,7 @@ contains
   !       alogrithm in this simulator we simply report the values from the ISCCP simulator. 
   ! ########################################################################################
   subroutine modis_subcolumn(nSubCols, nLevels, pressureLevels, optical_thickness,       & 
-                         tauLiquidFraction, g, w0, isccpTau, isccpCloudTopPressure, &
+                         tauLiquidFraction, g, w0, isccpCloudTopPressure, &
                          retrievedPhase, retrievedCloudTopPressure,                 &
                          retrievedTau,   retrievedSize)
 
@@ -128,7 +128,6 @@ contains
          g,                         & ! Subcolumn assymetry parameter  
          w0                           ! Subcolumn single-scattering albedo 
     real(wp),dimension(nSubCols),intent(in) :: &
-         isccpTau,                  & ! ISCCP Column-integrated optical thickness
          isccpCloudTopPressure        ! ISCCP retrieved cloud top pressure (Pa)
 
     ! OUTPUTS
@@ -284,7 +283,7 @@ contains
     ! LOCAL VARIABLES
     real(wp), parameter :: &
          LWP_conversion = 2._wp/3._wp * 1000._wp ! MKS units  
-    integer :: i, j
+    integer :: j
     logical, dimension(nPoints,nSubCols) :: &
          cloudMask,      &
          waterCloudMask, &

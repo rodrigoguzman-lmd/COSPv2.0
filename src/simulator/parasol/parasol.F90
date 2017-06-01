@@ -36,42 +36,12 @@
 module mod_parasol
   USE COSP_KINDS,          ONLY: wp
   USE COSP_MATH_CONSTANTS, ONLY: pi
-  use mod_cosp_config,     ONLY: R_UNDEF
-  implicit none
-
-  ! LUT Parameters
-  INTEGER,PARAMETER :: &
-       ntetas = 5, & ! Number of angles in LUT
-       nbtau  = 7    ! Number of optical depths in LUT
-
-  ! Optical depth
-  REAL(WP),parameter,dimension(nbtau) :: &
-       tau = (/0., 1., 5., 10., 20., 50., 100./)
-  REAL(WP),parameter,dimension(ntetas) :: &
-       tetas = (/0., 20., 40., 60., 80./)
-  ! LUTs
-  REAL(WP),parameter,dimension(ntetas,nbtau) :: &
-       ! LUT for spherical liquid particles
-       rlumA = reshape(source=(/ 0.03,     0.03,     0.03,     0.03,     0.03,           &
-                                 0.090886, 0.072185, 0.058410, 0.052498, 0.034730,       &
-                                 0.283965, 0.252596, 0.224707, 0.175844, 0.064488,       &
-                                 0.480587, 0.436401, 0.367451, 0.252916, 0.081667,       &
-                                 0.695235, 0.631352, 0.509180, 0.326551, 0.098215,       &
-                                 0.908229, 0.823924, 0.648152, 0.398581, 0.114411,       &
-                                 1.0,      0.909013, 0.709554, 0.430405, 0.121567/),     &
-                                 shape=(/ntetas,nbtau/)), & 
-	   ! LUT for ice particles         			     
-       rlumB = reshape(source=(/ 0.03,     0.03,     0.03,     0.03,     0.03,           &
-                                 0.092170, 0.087082, 0.083325, 0.084935, 0.054157,       &
-                                 0.311941, 0.304293, 0.285193, 0.233450, 0.089911,       &
-                                 0.511298, 0.490879, 0.430266, 0.312280, 0.107854,       &
-                                 0.712079, 0.673565, 0.563747, 0.382376, 0.124127,       &
-                                 0.898243, 0.842026, 0.685773, 0.446371, 0.139004,       &
-                                 0.976646, 0.912966, 0.737154, 0.473317, 0.145269/),     &
-                                 shape=(/ntetas,nbtau/))  
+  use mod_cosp_config,     ONLY: R_UNDEF,PARASOL_NREFL,PARASOL_SZA,PARASOL_NTAU,         &
+                                 PARASOL_TAU,rlumA,rlumB
+  implicit none 
   
 contains
-  SUBROUTINE parasol_subcolumn(npoints,nrefl,tautot_S_liq,tautot_S_ice,refl)
+  SUBROUTINE parasol_subcolumn(npoints,tautot_S_liq,tautot_S_ice,refl)
     ! ##########################################################################
     ! Purpose: To compute Parasol reflectance signal from model-simulated profiles 
     !          of cloud water and cloud fraction in each sub-column of each model 
@@ -87,13 +57,13 @@ contains
     
     ! INPUTS
     INTEGER,intent(in) :: &
-         npoints,              & ! Number of horizontal gridpoints
-         nrefl                   ! Number of angles for which the reflectance is computed
-    REAL(WP),intent(inout),dimension(npoints) :: &
+         npoints!,              & ! Number of horizontal gridpoints
+        ! nrefl                   ! Number of angles for which the reflectance is computed
+    REAL(WP),intent(in),dimension(npoints) :: &
          tautot_S_liq,         & ! Liquid water optical thickness, from TOA to SFC
          tautot_S_ice            ! Ice water optical thickness, from TOA to SFC
     ! OUTPUTS
-    REAL(WP),intent(inout),dimension(npoints,nrefl) :: &
+    REAL(WP),intent(out),dimension(npoints,PARASOL_NREFL) :: &
          refl                    ! Parasol reflectances
     
     ! LOCAL VARIABLES
@@ -104,59 +74,63 @@ contains
     
     ! Look up table variables:
     INTEGER                            :: ny,it 
-    REAL(WP),dimension(ntetas)         :: r_norm
-    REAL(WP),dimension(ntetas,nbtau-1) :: aa,ab,ba,bb
-    REAL(WP),dimension(npoints,5)      :: rlumA_mod,rlumB_mod
-    
+    REAL(WP),dimension(PARASOL_NREFL)         :: r_norm
+    REAL(WP),dimension(PARASOL_NREFL,PARASOL_NTAU-1) :: aa,ab,ba,bb
+    REAL(WP),dimension(npoints,PARASOL_NREFL)      :: rlumA_mod,rlumB_mod
+    REAL(WP),dimension(nPoints) :: tautot_S_liqTEMP,tautot_S_iceTEMP
+
+    tautot_S_liqTEMP(1:nPoints) = tautot_S_liq(1:nPoints)
+    tautot_S_iceTEMP(1:nPoints) = tautot_S_ice(1:nPoints)
+
     !--------------------------------------------------------------------------------
-    ! Lum_norm=f(tetaS,tau_cloud) derived from adding-doubling calculations
+    ! Lum_norm=f(PARASOL_SZA,tau_cloud) derived from adding-doubling calculations
     !        valid ONLY ABOVE OCEAN (albedo_sfce=5%)
     !        valid only in one viewing direction (theta_v=30�, phi_s-phi_v=320�)
     !        based on adding-doubling radiative transfer computation
-    !        for tau values (0 to 100) and for tetas values (0 to 80)
+    !        for tau values (0 to 100) and for PARASOL_SZA values (0 to 80)
     !        for 2 scattering phase functions: liquid spherical, ice non spherical
     
     ! Initialize
-    rlumA_mod(1:npoints,1:5) = 0._wp
-    rlumB_mod(1:npoints,1:5) = 0._wp
+    rlumA_mod(1:npoints,1:PARASOL_NREFL) = 0._wp
+    rlumB_mod(1:npoints,1:PARASOL_NREFL) = 0._wp
 
-    r_norm(1:ntetas)=1._wp/ cos(pi/180._wp*tetas(1:ntetas))
+    r_norm(1:PARASOL_NREFL)=1._wp/ cos(pi/180._wp*PARASOL_SZA(1:PARASOL_NREFL))
     
-    tautot_S_liq(1:npoints) = max(tautot_S_liq(1:npoints),tau(1))
-    tautot_S_ice(1:npoints) = max(tautot_S_ice(1:npoints),tau(1))
-    tautot_S(1:npoints)     = tautot_S_ice(1:npoints) + tautot_S_liq(1:npoints)
+    tautot_S_liqTEMP(1:npoints) = max(tautot_S_liqTEMP(1:npoints),PARASOL_TAU(1))
+    tautot_S_iceTEMP(1:npoints) = max(tautot_S_iceTEMP(1:npoints),PARASOL_TAU(1))
+    tautot_S(1:npoints)     = tautot_S_iceTEMP(1:npoints) + tautot_S_liqTEMP(1:npoints)
 
     ! Relative fraction of the opt. thick due to liquid or ice clouds
     WHERE (tautot_S(1:npoints) .gt. 0.)
-       frac_taucol_liq(1:npoints) = tautot_S_liq(1:npoints) / tautot_S(1:npoints)
-       frac_taucol_ice(1:npoints) = tautot_S_ice(1:npoints) / tautot_S(1:npoints)
+       frac_taucol_liq(1:npoints) = tautot_S_liqTEMP(1:npoints) / tautot_S(1:npoints)
+       frac_taucol_ice(1:npoints) = tautot_S_iceTEMP(1:npoints) / tautot_S(1:npoints)
     ELSEWHERE
        frac_taucol_liq(1:npoints) = 1._wp
        frac_taucol_ice(1:npoints) = 0._wp
     END WHERE
-    tautot_S(1:npoints)=MIN(tautot_S(1:npoints),tau(nbtau))
+    tautot_S(1:npoints)=MIN(tautot_S(1:npoints),PARASOL_TAU(PARASOL_NTAU))
     
     ! Linear interpolation    
-    DO ny=1,nbtau-1
+    DO ny=1,PARASOL_NTAU-1
        ! Microphysics A (liquid clouds) 
-       aA(1:ntetas,ny) = (rlumA(1:ntetas,ny+1)-rlumA(1:ntetas,ny))/(tau(ny+1)-tau(ny))
-       bA(1:ntetas,ny) = rlumA(1:ntetas,ny) - aA(1:ntetas,ny)*tau(ny)
+       aA(1:PARASOL_NREFL,ny) = (rlumA(1:PARASOL_NREFL,ny+1)-rlumA(1:PARASOL_NREFL,ny))/(PARASOL_TAU(ny+1)-PARASOL_TAU(ny))
+       bA(1:PARASOL_NREFL,ny) = rlumA(1:PARASOL_NREFL,ny) - aA(1:PARASOL_NREFL,ny)*PARASOL_TAU(ny)
        ! Microphysics B (ice clouds)
-       aB(1:ntetas,ny) = (rlumB(1:ntetas,ny+1)-rlumB(1:ntetas,ny))/(tau(ny+1)-tau(ny))
-       bB(1:ntetas,ny) = rlumB(1:ntetas,ny) - aB(1:ntetas,ny)*tau(ny)
+       aB(1:PARASOL_NREFL,ny) = (rlumB(1:PARASOL_NREFL,ny+1)-rlumB(1:PARASOL_NREFL,ny))/(PARASOL_TAU(ny+1)-PARASOL_TAU(ny))
+       bB(1:PARASOL_NREFL,ny) = rlumB(1:PARASOL_NREFL,ny) - aB(1:PARASOL_NREFL,ny)*PARASOL_TAU(ny)
     ENDDO
     
-    DO it=1,ntetas
-       DO ny=1,nbtau-1
-          WHERE (tautot_S(1:npoints) .ge. tau(ny).and. &
-                 tautot_S(1:npoints) .le. tau(ny+1))
+    DO it=1,PARASOL_NREFL
+       DO ny=1,PARASOL_NTAU-1
+          WHERE (tautot_S(1:npoints) .ge. PARASOL_TAU(ny).and. &
+                 tautot_S(1:npoints) .le. PARASOL_TAU(ny+1))
              rlumA_mod(1:npoints,it) = aA(it,ny)*tautot_S(1:npoints) + bA(it,ny)
              rlumB_mod(1:npoints,it) = aB(it,ny)*tautot_S(1:npoints) + bB(it,ny)
           END WHERE
        END DO
     END DO
     
-    DO it=1,ntetas
+    DO it=1,PARASOL_NREFL
        refl(1:npoints,it) = frac_taucol_liq(1:npoints) * rlumA_mod(1:npoints,it) &
             + frac_taucol_ice(1:npoints) * rlumB_mod(1:npoints,it)
        ! Normalized radiance -> reflectance: 
@@ -168,20 +142,19 @@ contains
   ! ######################################################################################
   ! SUBROUTINE parasol_gridbox
   ! ######################################################################################
-  subroutine parasol_column(npoints,nrefl,ncol,land,refl,parasolrefl)
+  subroutine parasol_column(npoints,ncol,land,refl,parasolrefl)
 
     ! Inputs
     integer,intent(in) :: &
          npoints, & ! Number of horizontal grid points
-         ncol,    & ! Number of subcolumns
-         nrefl      ! Number of solar zenith angles for parasol reflectances
+         ncol       ! Number of subcolumns
     real(wp),intent(in),dimension(npoints) :: &
          land       ! Landmask [0 - Ocean, 1 - Land]
-    real(wp),intent(in),dimension(npoints,ncol,nrefl) :: &
+    real(wp),intent(in),dimension(npoints,ncol,PARASOL_NREFL) :: &
          refl       ! Subgrid parasol reflectance ! parasol
 
     ! Outputs
-    real(wp),intent(out),dimension(npoints,nrefl) :: &
+    real(wp),intent(out),dimension(npoints,PARASOL_NREFL) :: &
          parasolrefl   ! Grid-averaged parasol reflectance
 
     ! Local variables
@@ -189,13 +162,13 @@ contains
 
     ! Compute grid-box averaged Parasol reflectances
     parasolrefl(:,:) = 0._wp
-    do k = 1, nrefl
+    do k = 1, PARASOL_NREFL
        do ic = 1, ncol
           parasolrefl(:,k) = parasolrefl(:,k) + refl(:,ic,k)
        enddo
     enddo
     
-    do k = 1, nrefl
+    do k = 1, PARASOL_NREFL
        parasolrefl(:,k) = parasolrefl(:,k) / float(ncol)
        ! if land=1 -> parasolrefl=R_UNDEF
        ! if land=0 -> parasolrefl=parasolrefl

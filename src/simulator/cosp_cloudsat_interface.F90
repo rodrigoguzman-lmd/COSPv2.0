@@ -88,7 +88,7 @@ CONTAINS
     ! LOCAL VARIABLES
     character(len=240) :: LUT_file_name
     logical       :: local_load_LUT
-    integer       :: i,j
+    integer       :: j
     
     if (present(load_LUT)) then
        local_load_LUT = load_LUT

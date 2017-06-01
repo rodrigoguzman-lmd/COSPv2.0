@@ -168,10 +168,10 @@ contains
   !                                   MODIS_OPTICS
   ! 
   ! ########################################################################################
-  subroutine modis_optics(nPoints,nLevels,nSubCols,num_trial_res,tauLIQ,sizeLIQ,tauICE,sizeICE,&
+  subroutine modis_optics(nPoints,nLevels,nSubCols,tauLIQ,sizeLIQ,tauICE,sizeICE,&
                           fracLIQ, g, w0)
     ! INPUTS
-    integer, intent(in)                                      :: nPoints,nLevels,nSubCols,num_trial_res
+    integer, intent(in)                                      :: nPoints,nLevels,nSubCols
     real(wp),intent(in),dimension(nPoints,nSubCols,nLevels)  :: tauLIQ, sizeLIQ, tauICE, sizeICE
     ! OUTPUTS
     real(wp),intent(out),dimension(nPoints,nSubCols,nLevels) :: g,w0,fracLIQ
@@ -285,10 +285,10 @@ contains
   !                                   MODIS_OPTICS
   ! 
   ! ########################################################################################
-  subroutine modis_optics_CAM(nPoints,nLevels,nSubCols,num_trial_res,tauLIQ,sizeLIQ,tauICE,sizeICE,&
-                          tauSNOW,sizeSNOW,fracLIQ, g, w0)
+  subroutine modis_optics_CAM(nPoints, nLevels, nSubCols, tauLIQ, sizeLIQ, tauICE, sizeICE,&
+                              tauSNOW, sizeSNOW, fracLIQ, g, w0)
     ! INPUTS
-    integer, intent(in)                                      :: nPoints,nLevels,nSubCols,num_trial_res
+    integer, intent(in)                                      :: nPoints,nLevels,nSubCols
     real(wp),intent(in),dimension(nPoints,nSubCols,nLevels)  :: tauLIQ, sizeLIQ, tauICE, sizeICE,tauSNOW,sizeSNOW
     ! OUTPUTS
     real(wp),intent(out),dimension(nPoints,nSubCols,nLevels) :: g,w0,fracLIQ
@@ -370,12 +370,10 @@ contains
          presf           ! Pressure at half levels
     
     ! OUTPUTS
-!    REAL(WP),intent(out),dimension(npoints,ncolumns,nlev,npart) :: &
-!         tau_part          !
     REAL(WP),intent(out),dimension(npoints,ncolumns,nlev)       :: &
          betatot,        & ! 
          tautot            ! Optical thickess integrated from top
-    REAL(WP),optional,intent(out),dimension(npoints,ncolumns,nlev)       :: &
+    REAL(WP),intent(out),dimension(npoints,ncolumns,nlev)       :: &
          betatot_ice,    & ! Backscatter coefficient for ice particles
          betatot_liq,    & ! Backscatter coefficient for liquid particles
          tautot_ice,     & ! Total optical thickness of ice
@@ -392,8 +390,8 @@ contains
     REAL(WP),dimension(npart,5)                     :: polpart 
     REAL(WP),dimension(npoints,nlev)                :: rhoair,alpha_mol
     REAL(WP),dimension(npoints,nlev+1)              :: zheight          
-    REAL(WP),dimension(npoints,nlev,npart)          :: rad_part,kp_part,qpart
-    REAL(WP),dimension(npoints,ncolumns,nlev,npart) :: alpha_part,tau_part
+    REAL(WP),dimension(npoints,nlev,npart)          :: rad_part,kp_part,qpart,alpha_part,tau_part
+    !REAL(WP),dimension(npoints,ncolumns,nlev,npart) :: alpha_part,tau_part
     INTEGER                                         :: i,k,icol
     
     ! Local data
@@ -469,20 +467,18 @@ contains
     ! Optical thickness of each layer (molecular)  
     tau_mol(1:npoints,1:nlev) = alpha_mol(1:npoints,1:nlev)*(zheight(1:npoints,1:nlev)-&
          zheight(1:npoints,2:nlev+1))
-    
+             
     ! Optical thickness from TOA to layer k (molecular)
     DO k = 2,nlev
        tau_mol(1:npoints,k) = tau_mol(1:npoints,k) + tau_mol(1:npoints,k-1)
-    ENDDO
-    
+    ENDDO    
+
     betatot    (1:npoints,1:ncolumns,1:nlev) = spread(beta_mol(1:npoints,1:nlev), dim=2, NCOPIES=ncolumns)
     tautot     (1:npoints,1:ncolumns,1:nlev) = spread(tau_mol (1:npoints,1:nlev), dim=2, NCOPIES=ncolumns)
-    if (present(betatot_ice) .and. present(betatot_liq) .and. present(tautot_ice) .and. present(tautot_liq)) then
-       betatot_liq(1:npoints,1:ncolumns,1:nlev) = betatot(1:npoints,1:ncolumns,1:nlev)
-       betatot_ice(1:npoints,1:ncolumns,1:nlev) = betatot(1:npoints,1:ncolumns,1:nlev)
-       tautot_liq (1:npoints,1:ncolumns,1:nlev) = tautot(1:npoints,1:ncolumns,1:nlev)
-       tautot_ice (1:npoints,1:ncolumns,1:nlev) = tautot(1:npoints,1:ncolumns,1:nlev)
-    endif
+    betatot_liq(1:npoints,1:ncolumns,1:nlev) = betatot(1:npoints,1:ncolumns,1:nlev)
+    betatot_ice(1:npoints,1:ncolumns,1:nlev) = betatot(1:npoints,1:ncolumns,1:nlev)
+    tautot_liq (1:npoints,1:ncolumns,1:nlev) = tautot(1:npoints,1:ncolumns,1:nlev)
+    tautot_ice (1:npoints,1:ncolumns,1:nlev) = tautot(1:npoints,1:ncolumns,1:nlev)      
     
     ! ##############################################################################
     ! *) Particles alpha, beta and optical thickness
@@ -499,9 +495,11 @@ contains
        elsewhere
           kp_part(1:npoints,1:nlev,i) = 0._wp
        endwhere
-    enddo
+    enddo    
     
     ! Loop over all subcolumns
+    tautot_S_liq(1:npoints,1:ncolumns) = 0._wp
+    tautot_S_ice(1:npoints,1:ncolumns) = 0._wp
     do icol=1,ncolumns
        ! ##############################################################################
        ! Mixing ratio particles in each subcolum
@@ -510,83 +508,78 @@ contains
        qpart(1:npoints,1:nlev,INDX_LSICE) = q_lsice(1:npoints,icol,1:nlev)
        qpart(1:npoints,1:nlev,INDX_CVLIQ) = q_cvliq(1:npoints,icol,1:nlev)
        qpart(1:npoints,1:nlev,INDX_CVICE) = q_cvice(1:npoints,icol,1:nlev)
-       
+
        ! ##############################################################################
        ! Alpha and optical thickness (particles)
        ! ##############################################################################
        ! Alpha of particles in each subcolumn:
        do i = 1, npart
           where (rad_part(1:npoints,1:nlev,i) .gt. 0.0)
-             alpha_part(1:npoints,icol,1:nlev,i) = 3._wp/4._wp * Qscat &
+             alpha_part(1:npoints,1:nlev,i) = 3._wp/4._wp * Qscat &
                   * rhoair(1:npoints,1:nlev) * qpart(1:npoints,1:nlev,i) &
                   / (rhopart(i) * rad_part(1:npoints,1:nlev,i) )
           elsewhere
-             alpha_part(1:npoints,icol,1:nlev,i) = 0._wp
+             alpha_part(1:npoints,1:nlev,i) = 0._wp
           endwhere
        enddo
        
        ! Optical thicknes
-       tau_part(1:npoints,icol,1:nlev,1:npart) = rdiffm * alpha_part(1:npoints,icol,1:nlev,1:npart)
+       tau_part(1:npoints,1:nlev,1:npart) = rdiffm * alpha_part(1:npoints,1:nlev,1:npart)
        do i = 1, npart
           ! Optical thickness of each layer (particles)
-          tau_part(1:npoints,icol,1:nlev,i) = tau_part(1:npoints,icol,1:nlev,i) &
+          tau_part(1:npoints,1:nlev,i) = tau_part(1:npoints,1:nlev,i) &
                & * (zheight(1:npoints,1:nlev)-zheight(1:npoints,2:nlev+1) )
           ! Optical thickness from TOA to layer k (particles)
           do k=2,nlev
-             tau_part(1:npoints,icol,k,i) = tau_part(1:npoints,icol,k,i) + tau_part(1:npoints,icol,k-1,i)
+             tau_part(1:npoints,k,i) = tau_part(1:npoints,k,i) + tau_part(1:npoints,k-1,i)
           enddo
        enddo
-       
+ 
        ! ##############################################################################
        ! Beta and optical thickness (total=molecular + particules)
        ! ##############################################################################
        
        DO i = 1, npart
           betatot(1:npoints,icol,1:nlev) = betatot(1:npoints,icol,1:nlev) + &
-               kp_part(1:npoints,1:nlev,i)*alpha_part(1:npoints,icol,1:nlev,i)
+               kp_part(1:npoints,1:nlev,i)*alpha_part(1:npoints,1:nlev,i)
           tautot(1:npoints,icol,1:nlev) = tautot(1:npoints,icol,1:nlev)  + &
-               tau_part(1:npoints,icol,1:nlev,i)
+              tau_part(1:npoints,1:nlev,i)
        ENDDO
        
        ! ##############################################################################
        ! Beta and optical thickness (liquid/ice)
        ! ##############################################################################
-       if (present(betatot_ice) .and. present(betatot_liq) .and. present(tautot_ice) .and. present(tautot_liq)) then
-          ! Ice
-          betatot_ice(1:npoints,icol,1:nlev) = betatot_ice(1:npoints,icol,1:nlev)+ &
-               kp_part(1:npoints,1:nlev,INDX_LSICE)*alpha_part(1:npoints,icol,1:nlev,INDX_LSICE)+ &
-               kp_part(1:npoints,1:nlev,INDX_CVICE)*alpha_part(1:npoints,icol,1:nlev,INDX_CVICE)
-          tautot_ice(1:npoints,icol,1:nlev) = tautot_ice(1:npoints,icol,1:nlev)  + &
-               tau_part(1:npoints,icol,1:nlev,INDX_LSICE) + &
-               tau_part(1:npoints,icol,1:nlev,INDX_CVICE)
+       ! Ice
+       betatot_ice(1:npoints,icol,1:nlev) = betatot_ice(1:npoints,icol,1:nlev)+ &
+            kp_part(1:npoints,1:nlev,INDX_LSICE)*alpha_part(1:npoints,1:nlev,INDX_LSICE)+ &
+            kp_part(1:npoints,1:nlev,INDX_CVICE)*alpha_part(1:npoints,1:nlev,INDX_CVICE)
+       tautot_ice(1:npoints,icol,1:nlev) = tautot_ice(1:npoints,icol,1:nlev)  + &
+            tau_part(1:npoints,1:nlev,INDX_LSICE) + &
+            tau_part(1:npoints,1:nlev,INDX_CVICE)
           
-          ! Liquid
-          betatot_liq(1:npoints,icol,1:nlev) = betatot_liq(1:npoints,icol,1:nlev)+ &
-               kp_part(1:npoints,1:nlev,INDX_LSLIQ)*alpha_part(1:npoints,icol,1:nlev,INDX_LSLIQ)+ &
-               kp_part(1:npoints,1:nlev,INDX_CVLIQ)*alpha_part(1:npoints,icol,1:nlev,INDX_CVLIQ)
-          tautot_liq(1:npoints,icol,1:nlev) = tautot_liq(1:npoints,icol,1:nlev)  + &
-               tau_part(1:npoints,icol,1:nlev,INDX_LSLIQ) + &
-               tau_part(1:npoints,icol,1:nlev,INDX_CVLIQ)
-       endif
-    enddo
-    
-    ! ##############################################################################    
-    ! Optical depths used by the PARASOL simulator
-    ! ##############################################################################   
-    tautot_S_liq(1:npoints,1:ncolumns) = 0._wp
-    tautot_S_ice(1:npoints,1:ncolumns) = 0._wp
-    do icol=1,ncolumns    
-       tautot_S_liq(1:npoints,icol) = tautot_S_liq(1:npoints,icol)+tau_part(1:npoints,icol,nlev,1)+tau_part(1:npoints,icol,nlev,3)
-       tautot_S_ice(1:npoints,icol) = tautot_S_ice(1:npoints,icol)+tau_part(1:npoints,icol,nlev,2)+tau_part(1:npoints,icol,nlev,4)
+       ! Liquid
+       betatot_liq(1:npoints,icol,1:nlev) = betatot_liq(1:npoints,icol,1:nlev)+ &
+            kp_part(1:npoints,1:nlev,INDX_LSLIQ)*alpha_part(1:npoints,1:nlev,INDX_LSLIQ)+ &
+            kp_part(1:npoints,1:nlev,INDX_CVLIQ)*alpha_part(1:npoints,1:nlev,INDX_CVLIQ)
+       tautot_liq(1:npoints,icol,1:nlev) = tautot_liq(1:npoints,icol,1:nlev)  + &
+            tau_part(1:npoints,1:nlev,INDX_LSLIQ) + &
+            tau_part(1:npoints,1:nlev,INDX_CVLIQ)
+            
+       ! ##############################################################################    
+       ! Optical depths used by the PARASOL simulator
+       ! ##############################################################################             
+       tautot_S_liq(:,icol) = tau_part(:,nlev,1)+tau_part(:,nlev,3)
+       tautot_S_ice(:,icol) = tau_part(:,nlev,2)+tau_part(:,nlev,4)
+                    
     enddo
     
   end subroutine lidar_optics
   ! ######################################################################################
   ! SUBROUTINE lidar_optics
   ! ######################################################################################
-  subroutine lidar_optics_cam(npoints,ncolumns,nlev,npart,ice_type,q_lsliq, q_lsice,q_cvliq, &
+  subroutine lidar_optics_cam(npoints,ncolumns,nlev,npart,ice_type,q_lsliq,q_lsice,q_cvliq, &
                           q_cvice,q_lssnow,ls_radliq,ls_radice,cv_radliq,cv_radice,ls_radsnow,  &
-                          pres,presf,temp,beta_mol,betatot,tau_part,tau_mol,tautot,  &
+                          pres,presf,temp,beta_mol,betatot,tau_mol,tautot,  &
                           tautot_S_liq,tautot_S_ice,betatot_ice,betatot_liq,         &
                           tautot_ice,tautot_liq)
     ! ####################################################################################
@@ -620,8 +613,6 @@ contains
          presf           ! Pressure at half levels
     
     ! OUTPUTS
-    REAL(WP),intent(out),dimension(npoints,ncolumns,nlev,npart) :: &
-         tau_part          !
     REAL(WP),intent(out),dimension(npoints,ncolumns,nlev)       :: &
          betatot,        & ! 
          tautot            ! Optical thickess integrated from top
@@ -642,8 +633,7 @@ contains
     REAL(WP),dimension(npart,5)                     :: polpart 
     REAL(WP),dimension(npoints,nlev)                :: rhoair,alpha_mol
     REAL(WP),dimension(npoints,nlev+1)              :: zheight          
-    REAL(WP),dimension(npoints,nlev,npart)          :: rad_part,kp_part,qpart
-    REAL(WP),dimension(npoints,ncolumns,nlev,npart) :: alpha_part
+    REAL(WP),dimension(npoints,nlev,npart)          :: rad_part,kp_part,qpart,alpha_part,tau_part
     INTEGER                                         :: i,k,icol
     
     ! Local data
@@ -705,7 +695,7 @@ contains
     rad_part(1:npoints,1:nlev,1:npart)     = MIN(rad_part(1:npoints,1:nlev,1:npart),70.0e-6_wp)
     !ls_radsnow(1:npoints,1:nlev)           = MAX(ls_radsnow(1:npoints,1:nlev),0._wp)
     !ls_radsnow(1:npoints,1:nlev)           = MIN(ls_radsnow(1:npoints,1:nlev),1000.e-6_wp)   
-
+    
     ! Density (clear-sky air)
     rhoair(1:npoints,1:nlev) = pres(1:npoints,1:nlev)/(rd*temp(1:npoints,1:nlev))
     
@@ -726,20 +716,18 @@ contains
     ! Optical thickness of each layer (molecular)  
     tau_mol(1:npoints,1:nlev) = alpha_mol(1:npoints,1:nlev)*(zheight(1:npoints,1:nlev)-&
          zheight(1:npoints,2:nlev+1))
-    
+             
     ! Optical thickness from TOA to layer k (molecular)
     DO k = 2,nlev
        tau_mol(1:npoints,k) = tau_mol(1:npoints,k) + tau_mol(1:npoints,k-1)
-    ENDDO
-    
+    ENDDO    
+
     betatot    (1:npoints,1:ncolumns,1:nlev) = spread(beta_mol(1:npoints,1:nlev), dim=2, NCOPIES=ncolumns)
     tautot     (1:npoints,1:ncolumns,1:nlev) = spread(tau_mol (1:npoints,1:nlev), dim=2, NCOPIES=ncolumns)
-    if (present(betatot_ice) .and. present(betatot_liq) .and. present(tautot_ice) .and. present(tautot_liq)) then
-       betatot_liq(1:npoints,1:ncolumns,1:nlev) = betatot(1:npoints,1:ncolumns,1:nlev)
-       betatot_ice(1:npoints,1:ncolumns,1:nlev) = betatot(1:npoints,1:ncolumns,1:nlev)
-       tautot_liq (1:npoints,1:ncolumns,1:nlev) = tautot(1:npoints,1:ncolumns,1:nlev)
-       tautot_ice (1:npoints,1:ncolumns,1:nlev) = tautot(1:npoints,1:ncolumns,1:nlev)
-    endif
+    betatot_liq(1:npoints,1:ncolumns,1:nlev) = betatot(1:npoints,1:ncolumns,1:nlev)
+    betatot_ice(1:npoints,1:ncolumns,1:nlev) = betatot(1:npoints,1:ncolumns,1:nlev)
+    tautot_liq (1:npoints,1:ncolumns,1:nlev) = tautot(1:npoints,1:ncolumns,1:nlev)
+    tautot_ice (1:npoints,1:ncolumns,1:nlev) = tautot(1:npoints,1:ncolumns,1:nlev)      
     
     ! ##############################################################################
     ! *) Particles alpha, beta and optical thickness
@@ -756,86 +744,81 @@ contains
        elsewhere
           kp_part(1:npoints,1:nlev,i) = 0._wp
        endwhere
-    enddo
+    enddo    
     
     ! Loop over all subcolumns
+    tautot_S_liq(1:npoints,1:ncolumns) = 0._wp
+    tautot_S_ice(1:npoints,1:ncolumns) = 0._wp
     do icol=1,ncolumns
        ! ##############################################################################
        ! Mixing ratio particles in each subcolum
        ! ##############################################################################
-       qpart(1:npoints,1:nlev,INDX_LSLIQ)  = q_lsliq(1:npoints,icol,1:nlev)
-       qpart(1:npoints,1:nlev,INDX_LSICE)  = q_lsice(1:npoints,icol,1:nlev)
-       qpart(1:npoints,1:nlev,INDX_CVLIQ)  = q_cvliq(1:npoints,icol,1:nlev)
-       qpart(1:npoints,1:nlev,INDX_CVICE)  = q_cvice(1:npoints,icol,1:nlev)
-       qpart(1:npoints,1:nlev,INDX_LSSNOW) = q_lssnow(1:npoints,icol,1:nlev)
-       
+       qpart(1:npoints,1:nlev,INDX_LSLIQ) = q_lsliq(1:npoints,icol,1:nlev)
+       qpart(1:npoints,1:nlev,INDX_LSICE) = q_lsice(1:npoints,icol,1:nlev)
+       qpart(1:npoints,1:nlev,INDX_CVLIQ) = q_cvliq(1:npoints,icol,1:nlev)
+       qpart(1:npoints,1:nlev,INDX_CVICE) = q_cvice(1:npoints,icol,1:nlev)
+
        ! ##############################################################################
        ! Alpha and optical thickness (particles)
        ! ##############################################################################
        ! Alpha of particles in each subcolumn:
        do i = 1, npart
           where (rad_part(1:npoints,1:nlev,i) .gt. 0.0)
-             alpha_part(1:npoints,icol,1:nlev,i) = 3._wp/4._wp * Qscat &
+             alpha_part(1:npoints,1:nlev,i) = 3._wp/4._wp * Qscat &
                   * rhoair(1:npoints,1:nlev) * qpart(1:npoints,1:nlev,i) &
                   / (rhopart(i) * rad_part(1:npoints,1:nlev,i) )
           elsewhere
-             alpha_part(1:npoints,icol,1:nlev,i) = 0._wp
+             alpha_part(1:npoints,1:nlev,i) = 0._wp
           endwhere
        enddo
        
        ! Optical thicknes
-       tau_part(1:npoints,icol,1:nlev,1:npart) = rdiffm * alpha_part(1:npoints,icol,1:nlev,1:npart)
+       tau_part(1:npoints,1:nlev,1:npart) = rdiffm * alpha_part(1:npoints,1:nlev,1:npart)
        do i = 1, npart
           ! Optical thickness of each layer (particles)
-          tau_part(1:npoints,icol,1:nlev,i) = tau_part(1:npoints,icol,1:nlev,i) &
+          tau_part(1:npoints,1:nlev,i) = tau_part(1:npoints,1:nlev,i) &
                & * (zheight(1:npoints,1:nlev)-zheight(1:npoints,2:nlev+1) )
           ! Optical thickness from TOA to layer k (particles)
           do k=2,nlev
-             tau_part(1:npoints,icol,k,i) = tau_part(1:npoints,icol,k,i) + tau_part(1:npoints,icol,k-1,i)
+             tau_part(1:npoints,k,i) = tau_part(1:npoints,k,i) + tau_part(1:npoints,k-1,i)
           enddo
        enddo
-       
+ 
        ! ##############################################################################
        ! Beta and optical thickness (total=molecular + particules)
        ! ##############################################################################
        
        DO i = 1, npart
           betatot(1:npoints,icol,1:nlev) = betatot(1:npoints,icol,1:nlev) + &
-               kp_part(1:npoints,1:nlev,i)*alpha_part(1:npoints,icol,1:nlev,i)
+               kp_part(1:npoints,1:nlev,i)*alpha_part(1:npoints,1:nlev,i)
           tautot(1:npoints,icol,1:nlev) = tautot(1:npoints,icol,1:nlev)  + &
-               tau_part(1:npoints,icol,1:nlev,i)
+              tau_part(1:npoints,1:nlev,i)
        ENDDO
        
        ! ##############################################################################
        ! Beta and optical thickness (liquid/ice)
        ! ##############################################################################
-       if (present(betatot_ice) .and. present(betatot_liq) .and. present(tautot_ice) .and. present(tautot_liq)) then
-          ! Ice
-          betatot_ice(1:npoints,icol,1:nlev) = betatot_ice(1:npoints,icol,1:nlev)+ &
-               kp_part(1:npoints,1:nlev,INDX_LSICE)*alpha_part(1:npoints,icol,1:nlev,INDX_LSICE)+ &
-               kp_part(1:npoints,1:nlev,INDX_CVICE)*alpha_part(1:npoints,icol,1:nlev,INDX_CVICE)
-          tautot_ice(1:npoints,icol,1:nlev) = tautot_ice(1:npoints,icol,1:nlev)  + &
-               tau_part(1:npoints,icol,1:nlev,INDX_LSICE) + &
-               tau_part(1:npoints,icol,1:nlev,INDX_CVICE)
+       ! Ice
+       betatot_ice(1:npoints,icol,1:nlev) = betatot_ice(1:npoints,icol,1:nlev)+ &
+            kp_part(1:npoints,1:nlev,INDX_LSICE)*alpha_part(1:npoints,1:nlev,INDX_LSICE)+ &
+            kp_part(1:npoints,1:nlev,INDX_CVICE)*alpha_part(1:npoints,1:nlev,INDX_CVICE)
+       tautot_ice(1:npoints,icol,1:nlev) = tautot_ice(1:npoints,icol,1:nlev)  + &
+            tau_part(1:npoints,1:nlev,INDX_LSICE) + &
+            tau_part(1:npoints,1:nlev,INDX_CVICE)
           
-          ! Liquid
-          betatot_liq(1:npoints,icol,1:nlev) = betatot_liq(1:npoints,icol,1:nlev)+ &
-               kp_part(1:npoints,1:nlev,INDX_LSLIQ)*alpha_part(1:npoints,icol,1:nlev,INDX_LSLIQ)+ &
-               kp_part(1:npoints,1:nlev,INDX_CVLIQ)*alpha_part(1:npoints,icol,1:nlev,INDX_CVLIQ)
-          tautot_liq(1:npoints,icol,1:nlev) = tautot_liq(1:npoints,icol,1:nlev)  + &
-               tau_part(1:npoints,icol,1:nlev,INDX_LSLIQ) + &
-               tau_part(1:npoints,icol,1:nlev,INDX_CVLIQ)
-       endif
-    enddo
-    
-    ! ##############################################################################    
-    ! Optical depths used by the PARASOL simulator
-    ! ##############################################################################   
-    tautot_S_liq(1:npoints,1:ncolumns) = 0._wp
-    tautot_S_ice(1:npoints,1:ncolumns) = 0._wp
-    do icol=1,ncolumns    
-       tautot_S_liq(1:npoints,icol) = tautot_S_liq(1:npoints,icol)+tau_part(1:npoints,icol,nlev,1)+tau_part(1:npoints,icol,nlev,3)
-       tautot_S_ice(1:npoints,icol) = tautot_S_ice(1:npoints,icol)+tau_part(1:npoints,icol,nlev,2)+tau_part(1:npoints,icol,nlev,4)
+       ! Liquid
+       betatot_liq(1:npoints,icol,1:nlev) = betatot_liq(1:npoints,icol,1:nlev)+ &
+            kp_part(1:npoints,1:nlev,INDX_LSLIQ)*alpha_part(1:npoints,1:nlev,INDX_LSLIQ)+ &
+            kp_part(1:npoints,1:nlev,INDX_CVLIQ)*alpha_part(1:npoints,1:nlev,INDX_CVLIQ)
+       tautot_liq(1:npoints,icol,1:nlev) = tautot_liq(1:npoints,icol,1:nlev)  + &
+            tau_part(1:npoints,1:nlev,INDX_LSLIQ) + &
+            tau_part(1:npoints,1:nlev,INDX_CVLIQ)
+            
+       ! ##############################################################################    
+       ! Optical depths used by the PARASOL simulator
+       ! ##############################################################################             
+       tautot_S_liq(:,icol) = tau_part(:,nlev,1)+tau_part(:,nlev,3)
+       tautot_S_ice(:,icol) = tau_part(:,nlev,2)+tau_part(:,nlev,4)                
     enddo
     
   end subroutine lidar_optics_cam

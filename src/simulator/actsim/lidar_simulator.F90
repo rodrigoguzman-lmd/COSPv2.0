@@ -83,8 +83,7 @@ module mod_lidar_simulator
   !                ATBperp,ice = Alpha*ATBice 
   ! Relationship between ATBice and ATBperp,ice for liquid particles:
   !          ATBperp,ice = Beta*ATBice^2 + Gamma*ATBice
-  real(wp),save :: &
-       alpha,beta,gamma2
+  real(wp) :: alpha,beta,gamma2
 
 contains
   ! ######################################################################################
@@ -123,10 +122,7 @@ contains
     ! LOCAL VARIABLES
     INTEGER :: k,icol
     REAL(WP),dimension(npoints) :: &
-         tautot_lay,     & !
-         tautot_lay_ice, & ! Total optical thickness of ice in the layer k
-         tautot_lay_liq, & ! Total optical thickness of liq in the layer k
-         tau_mol_lay       !
+         tautot_lay        !
     REAL(WP),dimension(npoints,ncolumns,nlev) :: &
          pnorm_liq,      & ! Lidar backscattered signal power for liquid
          pnorm_ice,      & ! Lidar backscattered signal power for ice
@@ -221,14 +217,16 @@ contains
           WHERE (pnorm(1:npoints,icol,k) .eq. 0)
              pnorm_perp_tot(1:npoints,icol,k)=0._wp
           ELSEWHERE
-             pnorm_perp_tot(1:npoints,icol,k) = merge((beta_perp_ice(1:npoints,icol,k)+  &
-                  beta_perp_liq(1:npoints,icol,k)-(beta_mol(1:npoints,k)/(1._wp+1._wp/   &
-                  0.0284_wp)))*EXP(-2._wp*tautot(1:npoints,icol,k-1))/                   &
-                  (2._wp*tautot_lay(1:npoints))*                                         &
-                  (1._wp-EXP(-2._wp*tautot_lay(1:npoints))),                             &
-                  (beta_perp_ice(1:npoints,icol,k)+beta_perp_liq(1:npoints,icol,k)-      &
-                  (beta_mol(1:npoints,k)/(1._wp+1._wp/0.0284_wp)))*                      &
-                  EXP(-2._wp*tautot(1:npoints,icol,k-1)),tautot_lay(1:npoints) .gt. 0.)
+             where(tautot_lay(1:npoints) .gt. 0.)
+                pnorm_perp_tot(1:npoints,icol,k) = (beta_perp_ice(1:npoints,icol,k)+     &
+                   beta_perp_liq(1:npoints,icol,k)-(beta_mol(1:npoints,k)/(1._wp+1._wp/  &
+                   0.0284_wp)))*EXP(-2._wp*tautot(1:npoints,icol,k-1))/                  &
+                   (2._wp*tautot_lay(1:npoints))* (1._wp-EXP(-2._wp*tautot_lay(1:npoints)))
+             elsewhere
+                pnorm_perp_tot(1:npoints,icol,k) = (beta_perp_ice(1:npoints,icol,k)+     &
+                   beta_perp_liq(1:npoints,icol,k)-(beta_mol(1:npoints,k)/(1._wp+1._wp/  &
+                   0.0284_wp)))*EXP(-2._wp*tautot(1:npoints,icol,k-1))
+             endwhere 
           ENDWHERE
        END DO
     enddo
@@ -239,7 +237,7 @@ contains
   ! SUBROUTINE lidar_column
   ! ######################################################################################
   subroutine lidar_column(npoints,ncol,nlevels,llm,max_bin,tmp, pnorm,                   &
-                           pnorm_perp, pmol, land, pplay, ok_lidar_cfad, ncat, cfad2,    &
+                           pnorm_perp, pmol, pplay, ok_lidar_cfad, ncat, cfad2,          &
                            lidarcld, lidarcldphase, cldlayer, zlev, zlev_half,           &
                            cldlayerphase, lidarcldtmp)
     integer,parameter :: &
@@ -260,8 +258,6 @@ contains
          pmol,    & ! Molecular ATB
          pplay,   & ! Pressure on model levels (Pa)
          tmp        ! Temperature at each levels
-    real(wp),intent(in),dimension(npoints) :: &
-         land       ! Landmask [0 - Ocean, 1 - Land]
     logical,intent(in) :: &
          ok_lidar_cfad ! True if lidar CFAD diagnostics need to be computed
     real(wp),intent(in),dimension(npoints,nlevels) :: &
@@ -386,30 +382,19 @@ contains
     integer :: k
 
     ! Uppermost layer 
-    WHERE ( EXP(-2._wp*tau(:,1)) .gt. 0. )
-       WHERE (tau(:,1) .gt. 0.)
-          pnorm(:,1) = beta(:,1) / (2._wp*tau(:,1)) * (1._wp-exp(-2._wp*tau(:,1)))
-       elsewhere
-          pnorm(:,1) = beta(:,1) * EXP(-2._wp*tau(:,1))
-       endwhere
-    elsewhere
-       pnorm(:,1) = 0._wp
-    endwhere
+    pnorm(:,1) = beta(:,1) / (2._wp*tau(:,1)) * (1._wp-exp(-2._wp*tau(:,1)))
 
     ! Other layers
     do k=2,nlev
        tautot_lay(:) = tau(:,k)-tau(:,k-1) 
-       WHERE ( EXP(-2._wp*tau(:,k-1)) .gt. 0. )
-          WHERE (tautot_lay(:) .gt. 0.)
-             pnorm(:,k) = beta(:,k)*EXP(-2._wp*tau(:,k-1)) /&
+       WHERE (tautot_lay(:) .gt. 0.)! .and. tau(:,k-1) .gt. 0._wp)
+          pnorm(:,k) = beta(:,k)*EXP(-2._wp*tau(:,k-1)) /&
                   (2._wp*tautot_lay(:))*(1._wp-EXP(-2._wp*tautot_lay(:)))
-          ELSEWHERE
-             ! This must never happen, but just in case, to avoid div. by 0
-             pnorm(:,k) = beta(:,k) * EXP(-2._wp*tau(:,k-1))
-          END WHERE
        ELSEWHERE
-          pnorm(:,k) = 0._wp!beta(:,k)
+          ! This must never happen, but just in case, to avoid div. by 0
+          pnorm(:,k) = beta(:,k)*EXP(-2._wp*tau(:,k-1))
        END WHERE
+
     END DO
   end subroutine cmp_backsignal
 
@@ -426,28 +411,17 @@ contains
     integer :: k
 
     ! Uppermost layer
-    WHERE ( EXP(-2._wp*tau(:,1)) .gt. 0. )
-       WHERE (tau(:,1) .gt. 0. .and. exp(-2._wp*tau(:,1)) .ne. 1._wp)
-          beta(:,1) = pnorm(:,1) * (2._wp*tau(:,1))/(1._wp-exp(-2._wp*tau(:,1)))
-       elsewhere
-          beta(:,1)=pnorm(:,1)/EXP(-2._wp*tau(:,1))
-       endwhere
-    elsewhere
-       beta(:,1) = 0._wp
-    endwhere
+    beta(:,1) = pnorm(:,1) * (2._wp*tau(:,1))/(1._wp-exp(-2._wp*tau(:,1)))
 
     ! Other layers
     do k=2,nlev
        tautot_lay(:) = tau(:,k)-tau(:,k-1)       
-       WHERE ( EXP(-2._wp*tau(:,k-1)) .gt. 0. )
-          WHERE (tautot_lay(:) .gt. 0.)
-             beta(:,k) = pnorm(:,k)/ EXP(-2._wp*tau(:,k-1))* &
-                  (2._wp*tautot_lay(:))/(1._wp-exp(-2._wp*tautot_lay(:)))
-          ELSEWHERE
-             beta(:,k)=pnorm(:,k)/EXP(-2._wp*tau(:,k-1))
-          END WHERE
+       WHERE (tautot_lay(:) .gt. 0._wp)! .and. tau(:,k-1) .gt. 0._wp)
+          beta(:,k) = pnorm(:,k)/ EXP(-2._wp*tau(:,k-1))* &
+               (2._wp*tautot_lay(:))/(1._wp-exp(-2._wp*tautot_lay(:)))
        ELSEWHERE
-          beta(:,k)=pnorm(:,k)
+          ! This must never happen, but just in case, to avoid div. by 0
+          beta(:,k)=pnorm(:,k)/EXP(-2._wp*tau(:,k-1))
        END WHERE
     ENDDO
 
@@ -980,7 +954,7 @@ contains
                 checkcldlayerphase = checkcldlayerphase+cldlayerphase(i,iz,ic)
              enddo
              checkcldlayerphase2 = cldlayer(i,iz)-checkcldlayerphase
-             if((checkcldlayerphase2 .gt. 0.01) .or. (checkcldlayerphase2 .lt. -0.01) ) print *, checkcldlayerphase,cldlayer(i,iz)
+             !if((checkcldlayerphase2 .gt. 0.01) .or. (checkcldlayerphase2 .lt. -0.01) ) print *, Checkcldlayerphase,cldlayer(i,iz)
           endif
        enddo
     enddo
@@ -1020,8 +994,8 @@ contains
        do itemp=1,Ntemp
           checktemp=lidarcldtemp(i,itemp,2)+lidarcldtemp(i,itemp,3)+lidarcldtemp(i,itemp,4)
           if(checktemp .NE. lidarcldtemp(i,itemp,1))then
-             print *, i,itemp
-             print *, lidarcldtemp(i,itemp,1:4)
+             !print *, i,itemp
+             !print *, lidarcldtemp(i,itemp,1:4)
           endif
           
        enddo

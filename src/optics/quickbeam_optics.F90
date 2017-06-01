@@ -55,10 +55,10 @@ module mod_quickbeam_optics
        cnt_ice       = 20    ! Lce temperature count
   
   ! Initialization variables
-  real(wp),dimension(cnt_ice),save :: mt_tti 
-  real(wp),dimension(cnt_liq),save :: mt_ttl
-  real(wp),dimension(nd),save      :: D
-  logical,save :: lQuickbeamInit
+  real(wp),dimension(cnt_ice) :: mt_tti 
+  real(wp),dimension(cnt_liq) :: mt_ttl
+  real(wp),dimension(nd)      :: D
+  logical :: lQuickbeamInit
   
 contains
   ! ######################################################################################
@@ -98,9 +98,10 @@ contains
          t_matrix,      & ! Temperature profile (K)
          sh_matrix        ! Specific humidity profile (%) -- only needed if gaseous aborption calculated.
     real(wp),intent(in),dimension(rcfg%nhclass,nprof,ngate) :: &
-         hm_matrix        ! Table of hydrometeor mixing ratios (g/kg)
+         hm_matrix!,     & ! Table of hydrometeor mixing ratios (g/kg)
+!         Np_matrix        ! Table of hydrometeor number concentration.  0 ==> use defaults. (units = 1/kg)
     real(wp),intent(inout),dimension(rcfg%nhclass,nprof,ngate) :: &
-         re_matrix,     & ! Table of hydrometeor effective radii.       0 ==> use defaults. (units=microns)
+         re_matrix,      & ! Table of hydrometeor effective radii.       0 ==> use defaults. (units=microns)
          Np_matrix        ! Table of hydrometeor number concentration.  0 ==> use defaults. (units = 1/kg)
     logical,intent(inout) :: &
          cmpGases         ! Compute gaseous attenuation for all profiles
@@ -114,15 +115,13 @@ contains
     ! INTERNAL VARIABLES   
     integer :: &
          phase, ns,tp,j,k,pr,itt, &
-         iff,iRe_type,n,max_bin,i,ii    
+         iRe_type,n    
     logical :: &
          hydro
     real(wp) :: &
          t_kelvin
     real(wp) :: &
-         rho_a,half_g_atten_current,half_g_atten_above,half_a_atten_current,         &
-         half_a_atten_above,kr,ze,zr,scale_factor,tc,Re,ld,tmp1,ze2,kr2,apm,bpm,Np,  &
-         base, step 
+         rho_a, kr,ze,zr,scale_factor,Re,Np, base, step 
 
     real(wp),dimension(:),allocatable :: &
          Deq,     & ! Discrete drop sizes (um)
@@ -286,7 +285,7 @@ contains
                       ! sd%rho should be ~ 1000  or sd%apm=524 .and. sd%bpm=3
                       Deq = Di
                    endif
-
+                   
                    ! Calculate effective reflectivity factor of volume
                    ! xxa are unused (Mie scattering and extinction efficiencies)
                    xxa(1:ns) = -9.9_wp
@@ -310,8 +309,6 @@ contains
                          call errorMessage('ERROR(optics/quickbeam_optics.f90): Error: Np input does not match sum(N)')
                       endif
                    endif
-
-                   ! Clean up space
                    deallocate(Di,Ni,rhoi,xxa,Deq)
 
                    ! LUT test code
@@ -348,6 +345,7 @@ contains
                    endif
                 endif
              enddo   ! end loop of tp (hydrometeor type)
+             !deallocate(Di,Ni,rhoi,xxa,Deq)
           endif
        enddo
     enddo
@@ -648,7 +646,7 @@ contains
          dmin_mm,dmax_mm,ahp,bhp, & ! power law variables
          rg,log_sigma_g,          & ! lognormal variables
          rho_e,                   & ! particle density (kg m^-3)
-         tmp1,tmp2,rc,tc
+         tmp1,tmp2,tc
     integer :: &
          k,lidx,uidx
     
@@ -957,7 +955,6 @@ contains
          conv_f  = 0.299792458    ! Conversion for radar frequency (to m)
     complex(wp),dimension(nsizes) ::&
          m0             ! Complex index of refraction
-    real(wp) :: count0,count1,tblock1,tblock2,tblock3
     
     ! Initialize
     z0_ray = 0._wp
@@ -1100,7 +1097,7 @@ contains
          gases, th, e, p, sumo, gm0, a0, ap, term1,    &
          term2, term3, bf, be, term4, npp,e_th,one_th, &
          pth3,eth35,aux1,aux2,aux3, aux4,gm,delt,x,y,  &
-         gm2,fpp_o2,fpp_h2o,s_o2,s_h2o,w,ws,es
+         gm2,fpp_o2,fpp_h2o,s_o2,s_h2o,w
     integer :: i
 
     ! Table1 parameters  v0, a1, a2, a3, a4, a5, a6  
@@ -1247,7 +1244,7 @@ contains
     ! Summation and result
     npp   = term1 + term2 + term3 + term4
     gases = 0.182_wp*f*npp
-    
+
   end function gases
  subroutine hydro_class_init(undef,lsingle,ldouble,sd)
     ! ##############################################################################################

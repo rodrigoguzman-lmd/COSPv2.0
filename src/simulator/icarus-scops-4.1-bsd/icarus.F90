@@ -42,7 +42,7 @@ MODULE MOD_ICARUS
        ncolprint = 0 ! Flag for debug printing (set as parameter to increase performance)
 
   ! Cloud-top height determination
-  integer,save :: &
+  integer :: &
        isccp_top_height,          & ! Top height adjustment method
        isccp_top_height_direction   ! Direction for finding atmosphere pressure level
 
@@ -110,9 +110,9 @@ contains
 
     ! INTERNAL VARIABLES
     CHARACTER(len=10)                     :: ftn09
-    REAL(WP),dimension(npoints,ncol)      :: ptop,tau,boxttop
+    REAL(WP),dimension(npoints,ncol)      :: boxttop
     REAL(WP),dimension(npoints,ncol,nlev) :: dtau,demIN
-    INTEGER                               :: i,j,ilev,ibox,ilev2
+    INTEGER                               :: j,ilev,ibox
     INTEGER,dimension(nlev,ncol   )       :: acc
 
     ! PARAMETERS
@@ -126,8 +126,8 @@ contains
     call ICARUS_SUBCOLUMN(npoints,ncol,nlev,sunlit,dtau,demIN,skt,emsfc_lw,qv,at,        &
                       pfull,phalf,frac_out,levmatch,boxtau,boxptop,boxttop,meantbclr)
 
-    call ICARUS_COLUMN(npoints,ncol,nlev,boxtau,boxptop/100._wp,sunlit,pfull,phalf,     &
-                        qv,at,skt,emsfc_lw,boxttop,fq_isccp,meanalbedocld,               &
+    call ICARUS_COLUMN(npoints,ncol,nlev,boxtau,boxptop/100._wp,sunlit,         &
+                        qv,at,skt,emsfc_lw,boxttop,fq_isccp,meanalbedocld,     &
                         meanptop,meantaucld,totalcldarea,meantb)
 
     ! ##########################################################################
@@ -311,9 +311,9 @@ contains
              elsewhere
                 dem(1:npoints,ibox) = 1._wp-(1._wp-demIN(1:npoints,ibox,ilev))*(1._wp-dem_wv(1:npoints,ilev))
              endwhere
-             !dem(1:npoints,ibox) = merge(dem_wv(1:npoints,ilev), &
-             !                            1._wp-(1._wp-demIN(1:npoints,ibox,ilev))*(1._wp-dem_wv(1:npoints,ilev)), &
-             !                            demIN(1:npoints,ibox,ilev) .eq. 0)
+!DJS             dem(1:npoints,ibox) = merge(dem_wv(1:npoints,ilev), &
+!DJS                                         1._wp-(1._wp-demIN(1:npoints,ibox,ilev))*(1._wp-dem_wv(1:npoints,ilev)), &
+!DJS                                         demIN(1:npoints,ibox,ilev) .eq. 0)
 
              ! Increase TOA flux emitted from layer
              fluxtop(1:npoints,ibox) = fluxtop(1:npoints,ibox) + dem(1:npoints,ibox)*bb*trans_layers_above(1:npoints,ibox) 
@@ -479,9 +479,8 @@ contains
   ! ######################################################################################
   ! SUBROUTINE icarus_column
   ! ######################################################################################
-  SUBROUTINE ICARUS_column(npoints,ncol,nlev,boxtau,boxptop,sunlit,pfull,phalf,         &
-                            qv,at,skt,emsfc_lw,boxttop,fq_isccp,meanalbedocld,meanptop,  &
-                            meantaucld,totalcldarea,meantb)
+  SUBROUTINE ICARUS_column(npoints,ncol,nlev,boxtau,boxptop,sunlit,qv,at,skt,emsfc_lw,   &
+                           boxttop,fq_isccp,meanalbedocld,meanptop,meantaucld,totalcldarea,meantb)
     ! Inputs
     INTEGER, intent(in) :: &
          ncol,    & ! Number of subcolumns
@@ -495,14 +494,11 @@ contains
          skt        ! Skin temperature (K)
     REAL(WP),intent(in),dimension(npoints,nlev) :: &
          at,       & ! Temperature (K)
-         pfull,    & ! Pressure
          qv          ! Specific humidity
     REAL(WP),intent(in),dimension(npoints,ncol) ::  &
          boxttop,  & ! Subcolumn top temperature
          boxptop,  & ! Subcolumn cloud top pressure
          boxtau      ! Subcolumn optical depth
-    REAL(WP),intent(in),dimension(npoints,nlev+1) :: &
-         phalf       ! Pressure at model half-levels
 
     ! Outputs
     REAL(WP),intent(inout),dimension(npoints) :: &
@@ -515,15 +511,9 @@ contains
          fq_isccp         ! The fraction of the model grid box covered by clouds
 
     ! Local Variables
-    INTEGER :: ibox,j,ilev,ilev2
-    REAL(WP) :: boxarea
-    REAL(WP),dimension(npoints,ncol) :: albedocld,fluxtop2
-    INTEGER, dimension(npoints) :: ipres,itau
+    INTEGER :: j,ilev,ilev2
+    REAL(WP),dimension(npoints,ncol) :: albedocld
     LOGICAL, dimension(npoints,ncol) :: box_cloudy
-    REAL(WP),dimension(npoints) :: bb,press,dpress,atmden,rvh20,rhoave,rh20s,rfrgn,tmpexp,&
-                                   tauwv,wk,trans_layers_above_clrsky
-    REAL(WP),dimension(npoints,ncol) :: trans_layers_above,dem
-    REAL(WP),dimension(npoints,nlev) :: dem_wv
 
     ! Variables for new joint-histogram implementation
     logical,dimension(ncol) :: box_cloudy2
@@ -560,7 +550,7 @@ contains
           do j=1,npoints ! 
              if (sunlit(j).eq.1 .or. isccp_top_height .eq. 3) then 
                 fq_isccp(j,ilev,ilev2)= 0.
-	     else 
+	         else 
                 fq_isccp(j,ilev,ilev2)= output_missing_value
              end if
           enddo
