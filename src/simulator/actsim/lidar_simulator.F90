@@ -135,10 +135,7 @@ contains
     ! LOCAL VARIABLES
     INTEGER :: k,icol
     REAL(WP),dimension(npoints) :: &
-         tautot_lay,     & !
-         tautot_lay_ice, & ! Total optical thickness of ice in the layer k
-         tautot_lay_liq, & ! Total optical thickness of liq in the layer k
-         tau_mol_lay       !
+         tautot_lay        !
     REAL(WP),dimension(npoints,ncolumns,nlev) :: &
          pnorm_liq,      & ! Lidar backscattered signal power for liquid
          pnorm_ice,      & ! Lidar backscattered signal power for ice
@@ -250,11 +247,18 @@ contains
   ! ######################################################################################
   ! SUBROUTINE lidar_column
   ! ######################################################################################
+<<<<<<< HEAD
   subroutine lidar_column(npoints,ncol,nlevels,llm,max_bin,tmp, pnorm, pnorm_perp, pmol, & !OPAQ
                            land, surfelev, pplay, ok_lidar_cfad, ncat, ntype, cfad2,     & !OPAQ !TIBO2
                            lidarcld, lidarcldphase, lidarcldtype, cldlayer, cldtype,     & !TIBO
                            cldtypetemp, cldtypemeanz, cldtypemeanzse, cldthinemis, zlev, & !TIBO2
                            zlev_half, cldlayerphase, lidarcldtmp, vgrid_z)                 !OPAQ
+=======
+  subroutine lidar_column(npoints,ncol,nlevels,llm,max_bin,tmp, pnorm,                   &
+                           pnorm_perp, pmol, pplay, ok_lidar_cfad, ncat, cfad2,    &
+                           lidarcld, lidarcldphase, cldlayer, zlev, zlev_half,           &
+                           cldlayerphase, lidarcldtmp)
+>>>>>>> 4154a168ba7318c5eb2e2af1d933736053060de5
     integer,parameter :: &
          nphase = 6 ! Number of cloud layer phase types
 
@@ -274,9 +278,12 @@ contains
          pmol,    & ! Molecular ATB
          pplay,   & ! Pressure on model levels (Pa)
          tmp        ! Temperature at each levels
+<<<<<<< HEAD
     real(wp),intent(in),dimension(npoints) :: &
          land,    & ! Landmask [0 - Ocean, 1 - Land]
          surfelev   ! Surface Elevation (m)                           !TIBO2
+=======
+>>>>>>> 4154a168ba7318c5eb2e2af1d933736053060de5
     logical,intent(in) :: &
          ok_lidar_cfad ! True if lidar CFAD diagnostics need to be computed
     real(wp),intent(in),dimension(npoints,nlevels) :: &
@@ -312,7 +319,7 @@ contains
          cfad2         ! CFADs of SR
 
     ! Local Variables
-    integer :: ic,k,i,j
+    integer :: ic,i,j
     real(wp),dimension(npoints,ncol,llm) :: &
          x3d
     real(wp),dimension(npoints,llm) :: &
