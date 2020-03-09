@@ -37,6 +37,11 @@
 !                             - Added phase 3D/3Dtemperature/Map output variables in diag_lidar 
 ! May 2015 - D. Swales        - Modified for cosp2.0 
 ! Nov 2018 - T. Michibata     - Added CloudSat+MODIS Warmrain Diagnostics
+! Mar 2020 - R. Guzman        - Added linear interpolation routines to perform vertical 
+!                               interpolations for the lidar and radar simulators by adding
+!                               new source file src/cosp_interp.F90. Also added subroutines
+!                               called : COSP_FIND_GRID_INDEXES and COSP_INTERP_NEW_GRID
+!
 ! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 MODULE MOD_COSP_STATS
   USE COSP_KINDS, ONLY: wp
@@ -54,9 +59,103 @@ MODULE MOD_COSP_STATS
             CFODD_HISTDBZE,   CFODD_HISTICOD,   &
             WR_NREGIME
   USE COSP_PHYS_CONSTANTS,  ONLY: tmelt
+  USE MOD_INTERP
 
   IMPLICIT NONE
 CONTAINS
+
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  !---------- SUBROUTINE COSP_FIND_GRID_INDEXES -------------
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  SUBROUTINE COSP_FIND_GRID_INDEXES(Npoints, Nlevels, zhalf, dz, index_new)
+   implicit none
+   ! Input arguments
+   integer,intent(in) :: Npoints  !# of grid points
+   integer,intent(in) :: Nlevels  !# of levels
+   real(wp),dimension(Npoints,Nlevels),intent(in) :: zhalf ! Height at half model levels [m] (Bottom of model layer)
+   real(wp),intent(in) :: dz ! Output vertical grid thickness 
+   integer,dimension(Npoints),intent(out) :: index_new ! Index (from ground) where to
+                                    ! start upward vertical interpolation in new grid
+
+    ! Local Variables
+    integer :: i,k
+    integer,dimension(Npoints) :: index_old ! Index (from ground) where to start upward
+                                            ! vertical interpolation in old grid
+
+    ! Initialization
+    index_old = 0
+
+    ! Determine the altitude index in old grid where to start interpolation
+    do i=1,Npoints
+       do k=1,Nlevels
+          if ( ((zhalf(i,k+1)-zhalf(i,k)) .gt. dz ) .and. (index_old(i) .eq. 0) ) then
+            index_old(i) = k
+            ! Determine the altitude index in new grid where to start interpolation
+            index_new(i) = floor(zhalf(i,index_old(i))/dz)
+	  endif
+       enddo
+    enddo
+
+END SUBROUTINE COSP_FIND_GRID_INDEXES
+
+
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  !---------- SUBROUTINE COSP_INTERP_NEW_GRID -------------
+  !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  SUBROUTINE COSP_INTERP_NEW_GRID(Npoints, Ncolumns, Nlevels, zfull, zhalf, &
+             y, Nglevels, newgrid, newgrid_top, r, log_units)
+   implicit none
+   ! Input arguments
+   integer,intent(in) :: Npoints  !# of grid points
+   integer,intent(in) :: Nlevels  !# of levels
+   integer,intent(in) :: Ncolumns !# of columns
+   real(wp),dimension(Npoints,Nlevels),intent(in) :: zfull ! Height at model levels [m]
+   real(wp),dimension(Npoints,Nlevels),intent(in) :: zhalf ! Height at half model levels [m] (Bottom of model layer)
+   real(wp),dimension(Npoints,Ncolumns,Nlevels),intent(in) :: y     ! Variable to be changed to a different grid
+   integer,intent(in) :: Nglevels  !# levels in the new grid
+   real(wp),dimension(Nglevels),intent(in) :: newgrid     ! Height at new vertical levels  [m]
+   real(wp),dimension(Nglevels),intent(in) :: newgrid_top ! Upper boundary of new levels  [m]
+   logical,optional,intent(in) :: log_units ! log units, need to convert to linear units
+   ! Output
+   real(wp),dimension(Npoints,Ncolumns,Nglevels),intent(out) :: r ! Variable on new grid
+
+   ! Local variables
+   integer :: i,j,k
+   logical :: lunits
+   integer :: l
+
+   lunits=.false.
+   if (present(log_units)) lunits=log_units
+
+   r = 0._wp
+
+   ! Simulataneous interpolation of the Ncolumns, loop over all Npoints of the model
+   do i=1,Npoints
+     call interp_linear(Ncolumns, Nlevels, zfull(i,:), y(i,:,:), Nglevels, newgrid, &
+                        r(i,:,:), lunits)
+   enddo
+
+   ! Set points under surface to R_UNDEF, and change to dBZ if necessary
+   do k=1,Nglevels
+     do j=1,Ncolumns
+       do i=1,Npoints
+         if (newgrid_top(k) > zhalf(i,1)) then ! Level above model bottom level
+           if (lunits) then
+             if (r(i,j,k) <= 0.0) then
+               r(i,j,k) = R_UNDEF
+             else
+               r(i,j,k) = 10._wp*log10(r(i,j,k))
+             endif
+           endif
+         else ! Level below surface
+           r(i,j,k) = R_GROUND
+         endif
+       enddo
+     enddo
+   enddo
+
+END SUBROUTINE COSP_INTERP_NEW_GRID
+
 
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   !---------- SUBROUTINE COSP_CHANGE_VERTICAL_GRID ----------------

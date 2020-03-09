@@ -46,16 +46,20 @@
 !     Also removed called to AVINT for gas and hydrometeor attenuation and replaced with simple
 !     summation. (Roger Marchand)
 ! May 2015 - D. Swales - Modified for COSPv2.0
+!
+! Mar 2020 - R.Guzman - Introduced new interpolation routine
+!
 ! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 module quickbeam
   USE COSP_KINDS,           ONLY: wp
-  USE MOD_COSP_CONFIG,      ONLY: R_UNDEF,cloudsat_histRef,use_vgrid,vgrid_zl,vgrid_zu,&
+  USE MOD_COSP_CONFIG,      ONLY: R_UNDEF,cloudsat_histRef,use_vgrid,vgrid_zl,vgrid_zu,dz,  &
                                   pClass_noPrecip, pClass_Rain1, pClass_Rain2, pClass_Rain3,&
                                   pClass_Snow1, pClass_Snow2, pClass_Mixed1, pClass_Mixed2, &
                                   pClass_Rain4, pClass_default, Zenonbinval, Zbinvallnd,    &
-                                  N_HYDRO,nCloudsatPrecipClass,cloudsat_preclvl
+                                  N_HYDRO,nCloudsatPrecipClass,cloudsat_preclvl,vgrid_z
 
-  USE MOD_COSP_STATS,       ONLY: COSP_LIDAR_ONLY_CLOUD,hist1D,COSP_CHANGE_VERTICAL_GRID
+  USE MOD_COSP_STATS,       ONLY: COSP_LIDAR_ONLY_CLOUD,hist1D,COSP_CHANGE_VERTICAL_GRID,   &
+                                  COSP_INTERP_NEW_GRID,COSP_FIND_GRID_INDEXES
   implicit none
 
   integer,parameter :: &
@@ -271,18 +275,39 @@ contains
     real(wp) :: zstep
     real(wp),dimension(npoints,ncolumns,llm) :: ze_toti,ze_noni
     logical :: lcloudsat = .false.
+    integer,dimension(Npoints)               :: index_new
 
     ! Which platforms to create diagnostics for?
     if (platform .eq. 'cloudsat') lcloudsat=.true.
+
+!!  Calling subroutine to determine the lowest altitude where to start interpolation
+    call cosp_find_grid_indexes(Npoints, Nlevels, zlev_half(:,Nlevels:1:-1), dz(1), index_new)
 
     ! Create Cloudsat diagnostics.
     if (lcloudsat) then
        if (use_vgrid) then
           ! Regrid in the vertical (*NOTE* This routine requires SFC-2-TOA ordering, so flip
           ! inputs and outputs to maintain TOA-2-SFC ordering convention in COSP2.)
-          call cosp_change_vertical_grid(Npoints,Ncolumns,Nlevels,zlev(:,nlevels:1:-1),&
-               zlev_half(:,nlevels:1:-1),Ze_tot(:,:,nlevels:1:-1),llm,vgrid_zl(llm:1:-1),&
-               vgrid_zu(llm:1:-1),Ze_toti(:,:,llm:1:-1),log_units=.true.)
+       !!! Regredding fields with low vertical variability (i.e. Pressure) can be performed with
+       !!! a simple linear interpolation. Fields with high vertical variability, particularly
+       !!! in the lower layers of the atmosphere (i.e. Reflectivity = Ze_tot), have to be
+       !!! regridded with the former vertical regrid routine in the lower layers (where model
+       !!! layer thickness dz_model is less than new vertical grid thickness dz_new) in order
+       !!! not to miss all the high resolution original information, and have to be linearly
+       !!! interpolated in the upper layers where dz_model > dz_new.
+
+       do i=1,Npoints
+       ! Regridding lower layers with former vertical regridding routine
+          call cosp_change_vertical_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),   &
+               zlev_half(i,nlevels:1:-1),Ze_tot(i,:,nlevels:1:-1),index_new(i),     &
+               vgrid_zl(llm:llm-index_new(i):-1),vgrid_zu(llm:llm-index_new(i):-1), &
+               Ze_toti(i,:,llm:llm-index_new(i):-1),log_units=.true.)
+       ! Interpolating upper layers of the profiles with new interpolation routine
+          call cosp_interp_new_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),     &
+            zlev_half(i,nlevels:1:-1),Ze_tot(i,:,nlevels:1:-1),llm-index_new(i), &
+            vgrid_z(llm-index_new(i):1:-1),vgrid_zu(llm-index_new(i):1:-1),      &
+            Ze_toti(i,:,llm-index_new(i):1:-1))
+       enddo
           
           ! Effective reflectivity histogram
           do i=1,Npoints
@@ -294,11 +319,21 @@ contains
 
           ! Compute cloudsat near-surface precipitation diagnostics
           ! First, regrid in the vertical Ze_tot_non.
-          call cosp_change_vertical_grid(Npoints,Ncolumns,Nlevels,zlev(:,nlevels:1:-1),&
-               zlev_half(:,nlevels:1:-1),Ze_tot_non(:,:,nlevels:1:-1),llm,vgrid_zl(llm:1:-1),&
-               vgrid_zu(llm:1:-1),Ze_noni(:,:,llm:1:-1),log_units=.true.)
+       do i=1,Npoints
+       ! Regridding lower layers with former vertical regridding routine
+          call cosp_change_vertical_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),   &
+               zlev_half(i,nlevels:1:-1),Ze_tot_non(i,:,nlevels:1:-1),index_new(i),     &
+               vgrid_zl(llm:llm-index_new(i):-1),vgrid_zu(llm:llm-index_new(i):-1), &
+               Ze_noni(i,:,llm:llm-index_new(i):-1),log_units=.true.)
+       ! Interpolating upper layers of the profiles with new interpolation routine
+          call cosp_interp_new_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),     &
+            zlev_half(i,nlevels:1:-1),Ze_tot_non(i,:,nlevels:1:-1),llm-index_new(i), &
+            vgrid_z(llm-index_new(i):1:-1),vgrid_zu(llm-index_new(i):1:-1),      &
+            Ze_noni(i,:,llm-index_new(i):1:-1))
+       enddo
+
           ! Compute the zstep distance between two atmopsheric layers
-	  zstep = vgrid_zl(1)-vgrid_zl(2)
+	  zstep = vgrid_zu(1)-vgrid_zu(2)
           ! Now call routine to generate diagnostics.
           call cloudsat_precipOccurence(Npoints, Ncolumns, llm, N_HYDRO, Ze_toti, Ze_noni, &
                land, surfelev, t2m, fracPrecipIce, cloudsat_precip_cover, cloudsat_pia, zstep)

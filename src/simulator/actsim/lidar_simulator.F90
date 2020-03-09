@@ -76,13 +76,16 @@
 ! the altitude at which a spaceborne lidar beam is fully attenuated. AMT, 10, 4659-4685,
 ! https://doi.org/10.5194/amt-10-4659-2017
 !
+! Mar 2020 - R.Guzman - Introduced new interpolation routine
+!
 ! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 module mod_lidar_simulator
   USE COSP_KINDS,         ONLY: wp
   USE MOD_COSP_CONFIG,    ONLY: SR_BINS,S_CLD,S_ATT,S_CLD_ATT,R_UNDEF,calipso_histBsct,  &
-                                use_vgrid,vgrid_zl,vgrid_zu,vgrid_z,atlid_histBsct,      &
+                                use_vgrid,vgrid_zl,vgrid_zu,vgrid_z,dz,atlid_histBsct,   &
                                 grLidar532_histBsct,S_CLD_ATLID,S_ATT_ATLID,S_CLD_ATT_ATLID
-  USE MOD_COSP_STATS,     ONLY: COSP_CHANGE_VERTICAL_GRID,hist1d
+  USE MOD_COSP_STATS,     ONLY: COSP_CHANGE_VERTICAL_GRID, hist1d, COSP_INTERP_NEW_GRID, &
+                                COSP_FIND_GRID_INDEXES
   implicit none
   
   ! Polynomial coefficients (Alpha, Beta, Gamma) which allow to compute the 
@@ -352,6 +355,7 @@ contains
     real(wp),dimension(npoints,ncol,llm)  :: pnormFlip,pnorm_perpFlip
     real(wp),dimension(npoints,1,llm)     :: tmpFlip,pplayFlip,betamolFlip
     real(wp),dimension(SR_BINS+1)         :: histBsct
+    integer,dimension(Npoints)            :: index_new
     
     ! Which lidar platform?
     lcalipso = .false.
@@ -361,22 +365,60 @@ contains
     if (platform .eq. 'atlid') latlid=.true.
     if (platform .eq. 'grlidar532') lgrlidar532=.true.
         
+!!  Calling subroutine to determine the lowest altitude where to start interpolation
+    call cosp_find_grid_indexes(Npoints, Nlevels, zlev_half(:,Nlevels:1:-1), dz(1), index_new)
+
     ! Vertically regrid input data
     if (use_vgrid) then 
+       !!! Regredding fields with low vertical variability (i.e. Pressure) can be performed with
+       !!! a simple linear interpolation. Fields with high vertical variability, particularly
+       !!! in the lower layers of the atmosphere (i.e. ATB = pnorm), have to be regridded with
+       !!! the former vertical regrid routine in the lower layers (where model layer thickness
+       !!! dz_model is less than new vertical grid thickness dz_new) in order not to miss all
+       !!! the high resolution original information, and have to be linearly interpolated in the
+       !!! upper layers where dz_model > dz_new.
+
        ph_in(:,1,:) = pplay(:,nlevels:1:-1)
-       call cosp_change_vertical_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
-            ph_in,llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),pplayFlip(:,1,llm:1:-1))
+       call cosp_interp_new_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+            ph_in,llm,vgrid_z(llm:1:-1),vgrid_zu(llm:1:-1),pplayFlip(:,1,llm:1:-1))
        betamol_in(:,1,:) = pmol(:,nlevels:1:-1)
-       call cosp_change_vertical_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
-            betamol_in,llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),betamolFlip(:,1,llm:1:-1))
-       call cosp_change_vertical_grid(Npoints,Ncol,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
-            pnorm(:,:,nlevels:1:-1),llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),pnormFlip(:,:,llm:1:-1))
+       call cosp_interp_new_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+            betamol_in,llm,vgrid_z(llm:1:-1),vgrid_zu(llm:1:-1),betamolFlip(:,1,llm:1:-1))
+       do i=1,Npoints
+       ! Regridding lower layers with former vertical regridding routine
+       call cosp_change_vertical_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+            pnorm(i,:,nlevels:1:-1),index_new(i),vgrid_zl(llm:llm-index_new(i):-1),                 &
+            vgrid_zu(llm:llm-index_new(i):-1),pnormFlip(i,:,llm:llm-index_new(i):-1))
+       ! Interpolating upper layers of the profiles with new interpolation routine
+          call cosp_interp_new_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+            pnorm(i,:,nlevels:1:-1),llm-index_new(i),vgrid_z(llm-index_new(i):1:-1), &
+            vgrid_zu(llm-index_new(i):1:-1),pnormFlip(i,:,llm-index_new(i):1:-1))
+       enddo
+
        if (lcalipso) then
           t_in(:,1,:)=tmp(:,nlevels:1:-1)
-          call cosp_change_vertical_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
-               t_in,llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),tmpFlip(:,1,llm:1:-1))
-          call cosp_change_vertical_grid(Npoints,Ncol,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
-               pnorm_perp(:,:,nlevels:1:-1),llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),pnorm_perpFlip(:,:,llm:1:-1))
+       do i=1,Npoints
+       ! Regridding lower layers with former vertical regridding routine
+          call cosp_change_vertical_grid(1,1,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+               t_in(i,1,:),index_new(i),vgrid_zl(llm:llm-index_new(i):-1),                          &
+               vgrid_zu(llm:llm-index_new(i):-1),tmpFlip(i,1,llm:llm-index_new(i):-1))
+       ! Interpolating upper layers of the profiles with new interpolation routine
+          call cosp_interp_new_grid(1,1,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+            t_in(i,1,:),llm-index_new(i),vgrid_z(llm-index_new(i):1:-1), &
+            vgrid_zu(llm-index_new(i):1:-1),tmpFlip(i,1,llm-index_new(i):1:-1))
+       enddo
+!!          call cosp_interp_new_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+!!               t_in,llm,vgrid_z(llm:1:-1),vgrid_zu(llm:1:-1),tmpFlip(:,1,llm:1:-1))
+       do i=1,Npoints
+       ! Regridding lower layers with former vertical regridding routine
+          call cosp_change_vertical_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+               pnorm_perp(i,:,nlevels:1:-1),index_new(i),vgrid_zl(llm:llm-index_new(i):-1),            &
+               vgrid_zu(llm:llm-index_new(i):-1),pnorm_perpFlip(i,:,llm:llm-index_new(i):-1))
+       ! Interpolating upper layers of the profiles with new interpolation routine
+          call cosp_interp_new_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+            pnorm_perp(i,:,nlevels:1:-1),llm-index_new(i),vgrid_z(llm-index_new(i):1:-1), &
+            vgrid_zu(llm-index_new(i):1:-1),pnorm_perpFlip(i,:,llm-index_new(i):1:-1))
+       enddo
        endif
     endif
 
