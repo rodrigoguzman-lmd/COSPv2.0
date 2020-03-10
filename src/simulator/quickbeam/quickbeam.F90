@@ -280,9 +280,6 @@ contains
     ! Which platforms to create diagnostics for?
     if (platform .eq. 'cloudsat') lcloudsat=.true.
 
-!!  Calling subroutine to determine the lowest altitude where to start interpolation
-    call cosp_find_grid_indexes(Npoints, Nlevels, zlev_half(:,Nlevels:1:-1), dz(1), index_new)
-
     ! Create Cloudsat diagnostics.
     if (lcloudsat) then
        if (use_vgrid) then
@@ -296,14 +293,17 @@ contains
        !!! not to miss all the high resolution original information, and have to be linearly
        !!! interpolated in the upper layers where dz_model > dz_new.
 
+       !!!  Calling subroutine to determine the lowest altitude where to start interpolation
+       call cosp_find_grid_indexes(Npoints, Nlevels, zlev_half(:,Nlevels:1:-1), dz(1), index_new)
+
        do i=1,Npoints
        ! Regridding lower layers with former vertical regridding routine
-          call cosp_change_vertical_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),   &
-               zlev_half(i,nlevels:1:-1),Ze_tot(i,:,nlevels:1:-1),index_new(i),     &
-               vgrid_zl(llm:llm-index_new(i):-1),vgrid_zu(llm:llm-index_new(i):-1), &
-               Ze_toti(i,:,llm:llm-index_new(i):-1),log_units=.true.)
-       ! Interpolating upper layers of the profiles with new interpolation routine
-          call cosp_interp_new_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),     &
+       call cosp_change_vertical_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),   &
+            zlev_half(i,nlevels:1:-1),Ze_tot(i,:,nlevels:1:-1),index_new(i),     &
+            vgrid_zl(llm:llm-index_new(i):-1),vgrid_zu(llm:llm-index_new(i):-1), &
+            Ze_toti(i,:,llm:llm-index_new(i):-1),log_units=.true.)
+       ! Interpolating upper layers with new interpolation routine
+       call cosp_interp_new_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),        &
             zlev_half(i,nlevels:1:-1),Ze_tot(i,:,nlevels:1:-1),llm-index_new(i), &
             vgrid_z(llm-index_new(i):1:-1),vgrid_zu(llm-index_new(i):1:-1),      &
             Ze_toti(i,:,llm-index_new(i):1:-1))
@@ -321,14 +321,14 @@ contains
           ! First, regrid in the vertical Ze_tot_non.
        do i=1,Npoints
        ! Regridding lower layers with former vertical regridding routine
-          call cosp_change_vertical_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),   &
-               zlev_half(i,nlevels:1:-1),Ze_tot_non(i,:,nlevels:1:-1),index_new(i),     &
-               vgrid_zl(llm:llm-index_new(i):-1),vgrid_zu(llm:llm-index_new(i):-1), &
-               Ze_noni(i,:,llm:llm-index_new(i):-1),log_units=.true.)
-       ! Interpolating upper layers of the profiles with new interpolation routine
-          call cosp_interp_new_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),     &
+       call cosp_change_vertical_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),   &
+            zlev_half(i,nlevels:1:-1),Ze_tot_non(i,:,nlevels:1:-1),index_new(i), &
+            vgrid_zl(llm:llm-index_new(i):-1),vgrid_zu(llm:llm-index_new(i):-1), &
+            Ze_noni(i,:,llm:llm-index_new(i):-1),log_units=.true.)
+       ! Interpolating upper layers with new interpolation routine
+          call cosp_interp_new_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),         &
             zlev_half(i,nlevels:1:-1),Ze_tot_non(i,:,nlevels:1:-1),llm-index_new(i), &
-            vgrid_z(llm-index_new(i):1:-1),vgrid_zu(llm-index_new(i):1:-1),      &
+            vgrid_z(llm-index_new(i):1:-1),vgrid_zu(llm-index_new(i):1:-1),          &
             Ze_noni(i,:,llm-index_new(i):1:-1))
        enddo
 

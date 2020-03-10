@@ -67,7 +67,8 @@ MODULE MOD_COSP
   USE MOD_PARASOL,                   ONLY: parasol_subcolumn,     parasol_column
   use mod_cosp_rttov,                ONLY: rttov_column
   USE MOD_COSP_STATS,                ONLY: COSP_LIDAR_ONLY_CLOUD,COSP_CHANGE_VERTICAL_GRID, &
-                                           COSP_DIAG_WARMRAIN
+                                           COSP_DIAG_WARMRAIN, COSP_INTERP_NEW_GRID,        &
+                                           COSP_FIND_GRID_INDEXES
 
   IMPLICIT NONE
 
@@ -360,6 +361,8 @@ CONTAINS
          ok_lidar_cfad_atlid = .false., &
          lrttov_cleanUp   = .false.
 
+    integer, dimension(:),allocatable  :: &
+         index_new
     integer, dimension(:,:),allocatable  :: &
          modisRetrievedPhase,isccpLEVMATCH
     real(wp), dimension(:),  allocatable  :: &
@@ -1536,40 +1539,92 @@ CONTAINS
     if (Lradar_lidar_tcc .or. Llidar_only_freq_cloud .or. Lcloudsat_tcc .or. Lcloudsat_tcc2) then
 
        if (use_vgrid) then
+       !!! Regredding fields with low vertical variability (i.e. Pressure) can be performed with
+       !!! a simple linear interpolation. Fields with high vertical variability, particularly
+       !!! in the lower layers of the atmosphere (i.e. ATB = pnorm), have to be regridded with
+       !!! the former vertical regrid routine in the lower layers (where model layer thickness
+       !!! dz_model is less than new vertical grid thickness dz_new) in order not to miss all
+       !!! the high resolution original information, and have to be linearly interpolated in the
+       !!! upper layers where dz_model > dz_new.
+
           allocate(lidar_only_freq_cloud(cloudsatIN%Npoints,Nlvgrid),                    &
                radar_lidar_tcc(cloudsatIN%Npoints), cloudsat_tcc(cloudsatIN%Npoints),    &
                cloudsat_tcc2(cloudsatIN%Npoints))
           allocate(betamol_in(cloudsatIN%Npoints,1,cloudsatIN%Nlevels),                  &
                    betamoli(cloudsatIN%Npoints,1,Nlvgrid),                               &
                    pnormI(cloudsatIN%Npoints,cloudsatIN%Ncolumns,Nlvgrid),               &
-                   Ze_totI(cloudsatIN%Npoints,cloudsatIN%Ncolumns,Nlvgrid))
+                   Ze_totI(cloudsatIN%Npoints,cloudsatIN%Ncolumns,Nlvgrid),              &
+                   index_new(cloudsatIN%Npoints))
+
+       !!!  Calling subroutine to determine the lowest altitude where to start interpolation
+       call cosp_find_grid_indexes(cloudsatIN%Npoints, cloudsatIN%Nlevels,            &
+               cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1), dz(1), index_new)
 
           ! Regrid in the vertical (*NOTE* This routine requires SFC-2-TOA ordering, so flip
           ! inputs and outputs to maintain TOA-2-SFC ordering convention in COSP2.)
           betamol_in(:,1,:) = calipso_beta_mol(:,cloudsatIN%Nlevels:1:-1)
-          call cosp_change_vertical_grid(cloudsatIN%Npoints,1,cloudsatIN%Nlevels,        &
-               cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),                         &
-               cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),betamol_in,         &
-               Nlvgrid,vgrid_zl(Nlvgrid:1:-1),vgrid_zu(Nlvgrid:1:-1),                    &
+!!!          call cosp_change_vertical_grid(cloudsatIN%Npoints,1,cloudsatIN%Nlevels,        &
+!!!               cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),                         &
+!!!               cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),betamol_in,         &
+!!!               Nlvgrid,vgrid_zl(Nlvgrid:1:-1),vgrid_zu(Nlvgrid:1:-1),                    &
+!!!               betamolI(:,1,Nlvgrid:1:-1))
+       call cosp_interp_new_grid(cloudsatIN%Npoints,1,cloudsatIN%Nlevels,        &
+               cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),                 &
+               cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),betamol_in, &
+               Nlvgrid,vgrid_z(Nlvgrid:1:-1),vgrid_zu(Nlvgrid:1:-1),             &
                betamolI(:,1,Nlvgrid:1:-1))
 
-          call cosp_change_vertical_grid(cloudsatIN%Npoints,cloudsatIN%Ncolumns,         &
-               cloudsatIN%Nlevels,cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),      &
-               cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),                    &
-               calipso_beta_tot(:,:,cloudsatIN%Nlevels:1:-1),Nlvgrid,                    &
-               vgrid_zl(Nlvgrid:1:-1),vgrid_zu(Nlvgrid:1:-1),pnormI(:,:,Nlvgrid:1:-1))
+!!!          call cosp_change_vertical_grid(cloudsatIN%Npoints,cloudsatIN%Ncolumns,         &
+!!!               cloudsatIN%Nlevels,cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),      &
+!!!               cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),                    &
+!!!               calipso_beta_tot(:,:,cloudsatIN%Nlevels:1:-1),Nlvgrid,                    &
+!!!               vgrid_zl(Nlvgrid:1:-1),vgrid_zu(Nlvgrid:1:-1),pnormI(:,:,Nlvgrid:1:-1))
+       do i=1,cloudsatIN%Npoints
+       ! Regridding lower layers with former vertical regridding routine
+       call cosp_change_vertical_grid(1,cloudsatIN%Ncolumns,cloudsatIN%Nlevels, &
+            cospgridIN%hgt_matrix(i,cloudsatIN%Nlevels:1:-1),                   &
+            cospgridIN%hgt_matrix_half(i,cloudsatIN%Nlevels:1:-1),              &
+            calipso_beta_tot(i,:,cloudsatIN%Nlevels:1:-1),index_new(i),         &
+            vgrid_zl(Nlvgrid:Nlvgrid-index_new(i):-1),                          &
+            vgrid_zu(Nlvgrid:Nlvgrid-index_new(i):-1),                          &
+            pnormI(i,:,Nlvgrid:Nlvgrid-index_new(i):-1))
+       ! Interpolating upper layers of the profiles with new interpolation routine
+          call cosp_interp_new_grid(1,cloudsatIN%Ncolumns,cloudsatIN%Nlevels,       &
+            cospgridIN%hgt_matrix(i,cloudsatIN%Nlevels:1:-1),                       &
+            cospgridIN%hgt_matrix_half(i,cloudsatIN%Nlevels:1:-1),                  &
+            calipso_beta_tot(i,:,cloudsatIN%Nlevels:1:-1),Nlvgrid-index_new(i),     &
+            vgrid_z(Nlvgrid-index_new(i):1:-1),vgrid_zu(Nlvgrid-index_new(i):1:-1), &
+            pnormI(i,:,Nlvgrid-index_new(i):1:-1))
+       enddo
 
-          call cosp_change_vertical_grid(cloudsatIN%Npoints,cloudsatIN%Ncolumns,         &
-               cloudsatIN%Nlevels,cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),      &
-               cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),                    &
-               cloudsatDBZe(:,:,cloudsatIN%Nlevels:1:-1),Nlvgrid,vgrid_zl(Nlvgrid:1:-1), &
-               vgrid_zu(Nlvgrid:1:-1),Ze_totI(:,:,Nlvgrid:1:-1),log_units=.true.)
+!!!          call cosp_change_vertical_grid(cloudsatIN%Npoints,cloudsatIN%Ncolumns,         &
+!!!               cloudsatIN%Nlevels,cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),      &
+!!!               cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),                    &
+!!!               cloudsatDBZe(:,:,cloudsatIN%Nlevels:1:-1),Nlvgrid,vgrid_zl(Nlvgrid:1:-1), &
+!!!               vgrid_zu(Nlvgrid:1:-1),Ze_totI(:,:,Nlvgrid:1:-1),log_units=.true.)
+       do i=1,cloudsatIN%Npoints
+       ! Regridding lower layers with former vertical regridding routine
+       call cosp_change_vertical_grid(1,cloudsatIN%Ncolumns,cloudsatIN%Nlevels, &
+            cospgridIN%hgt_matrix(i,cloudsatIN%Nlevels:1:-1),                   &
+            cospgridIN%hgt_matrix_half(i,cloudsatIN%Nlevels:1:-1),              &
+            cloudsatDBZe(i,:,cloudsatIN%Nlevels:1:-1),index_new(i),             &
+            vgrid_zl(Nlvgrid:Nlvgrid-index_new(i):-1),                          &
+            vgrid_zu(Nlvgrid:Nlvgrid-index_new(i):-1),                          &
+            Ze_totI(i,:,Nlvgrid:Nlvgrid-index_new(i):-1),log_units=.true.)
+       ! Interpolating upper layers of the profiles with new interpolation routine
+          call cosp_interp_new_grid(1,cloudsatIN%Ncolumns,cloudsatIN%Nlevels,       &
+            cospgridIN%hgt_matrix(i,cloudsatIN%Nlevels:1:-1),                       &
+            cospgridIN%hgt_matrix_half(i,cloudsatIN%Nlevels:1:-1),                  &
+            cloudsatDBZe(i,:,cloudsatIN%Nlevels:1:-1),Nlvgrid-index_new(i),         &
+            vgrid_z(Nlvgrid-index_new(i):1:-1),vgrid_zu(Nlvgrid-index_new(i):1:-1), &
+            Ze_totI(i,:,Nlvgrid-index_new(i):1:-1),log_units=.true.)
+       enddo
 
           call cosp_lidar_only_cloud(cloudsatIN%Npoints, cloudsatIN%Ncolumns, Nlvgrid,   &
              pnormI, betamolI, Ze_totI, lidar_only_freq_cloud, radar_lidar_tcc,          &
              cloudsat_tcc, cloudsat_tcc2)
 
-          deallocate(betamol_in,betamolI,pnormI,ze_totI)
+          deallocate(betamol_in,betamolI,pnormI,ze_totI,index_new)
        else
           allocate(lidar_only_freq_cloud(cloudsatIN%Npoints,cloudsatIN%Nlevels),         &
                radar_lidar_tcc(cloudsatIN%Npoints), cloudsat_tcc(cloudsatIN%Npoints),    &
@@ -1606,26 +1661,69 @@ CONTAINS
                  delz(cloudsatIN%Npoints,Nlvgrid),                          &
                  t_in(cloudsatIN%Npoints,1,cloudsatIN%Nlevels),             &
                  tmpFlip(cloudsatIN%Npoints,1,Nlvgrid),                     &
-                 Ze_totFlip(cloudsatIN%Npoints,cloudsatIN%Ncolumns,Nlvgrid) )
+                 Ze_totFlip(cloudsatIN%Npoints,cloudsatIN%Ncolumns,Nlvgrid),&
+                 index_new(cloudsatIN%Npoints)                              )
        do k = 1, Nlvgrid
           zlev(:,k) = vgrid_zu(k)
           delz(:,k) = dz(k)
        enddo
+
+       !!!  Calling subroutine to determine the lowest altitude where to start interpolation
+       call cosp_find_grid_indexes(cloudsatIN%Npoints, cloudsatIN%Nlevels,            &
+               cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1), dz(1), index_new)
+
        t_in(:,1,:) = cospgridIN%at(:,:)
-       call cosp_change_vertical_grid (                                  &
-            cloudsatIN%Npoints, 1, cloudsatIN%Nlevels,                   &
-            cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),            &
-            cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),       &
-            t_in(:,:,cloudsatIN%Nlevels:1:-1), Nlvgrid,                  &
-            vgrid_zl(Nlvgrid:1:-1), vgrid_zu(Nlvgrid:1:-1),              &
-            tmpFlip(:,:,Nlvgrid:1:-1)                                    )
-       call cosp_change_vertical_grid (                                  &
-            cloudsatIN%Npoints, cloudsatIN%Ncolumns, cloudsatIN%Nlevels, &
-            cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),            &
-            cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),       &
-            cloudsatDBZe(:,:,cloudsatIN%Nlevels:1:-1), Nlvgrid,          &
-            vgrid_zl(Nlvgrid:1:-1), vgrid_zu(Nlvgrid:1:-1),              &
-            Ze_totFlip(:,:,Nlvgrid:1:-1), log_units=.true.               )
+!!!       call cosp_change_vertical_grid (                                  &
+!!!            cloudsatIN%Npoints, 1, cloudsatIN%Nlevels,                   &
+!!!            cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),            &
+!!!            cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),       &
+!!!            t_in(:,:,cloudsatIN%Nlevels:1:-1), Nlvgrid,                  &
+!!!            vgrid_zl(Nlvgrid:1:-1), vgrid_zu(Nlvgrid:1:-1),              &
+!!!            tmpFlip(:,:,Nlvgrid:1:-1)                                    )
+       do i=1,cloudsatIN%Npoints
+       ! Regridding lower layers with former vertical regridding routine
+       call cosp_change_vertical_grid(1,1,cloudsatIN%Nlevels,            &
+            cospgridIN%hgt_matrix(i,cloudsatIN%Nlevels:1:-1),            &
+            cospgridIN%hgt_matrix_half(i,cloudsatIN%Nlevels:1:-1),       &
+            t_in(i,:,cloudsatIN%Nlevels:1:-1),index_new(i),              &
+            vgrid_zl(Nlvgrid:Nlvgrid-index_new(i):-1),                   &
+            vgrid_zu(Nlvgrid:Nlvgrid-index_new(i):-1),                   &
+            tmpFlip(i,:,Nlvgrid:Nlvgrid-index_new(i):-1)                 )
+       ! Interpolating upper layers with new interpolation routine
+       call cosp_interp_new_grid(1,1,cloudsatIN%Nlevels,                 &
+            cospgridIN%hgt_matrix(i,cloudsatIN%Nlevels:1:-1),            &
+            cospgridIN%hgt_matrix_half(i,cloudsatIN%Nlevels:1:-1),       &
+            t_in(i,:,cloudsatIN%Nlevels:1:-1),Nlvgrid-index_new(i),      &
+            vgrid_z(Nlvgrid-index_new(i):1:-1),                          &
+            vgrid_zu(Nlvgrid-index_new(i):1:-1),                         &
+            tmpFlip(i,:,Nlvgrid-index_new(i):1:-1)                       )
+       enddo
+
+!!!       call cosp_change_vertical_grid (                                  &
+!!!            cloudsatIN%Npoints, cloudsatIN%Ncolumns, cloudsatIN%Nlevels, &
+!!!            cospgridIN%hgt_matrix(:,cloudsatIN%Nlevels:1:-1),            &
+!!!            cospgridIN%hgt_matrix_half(:,cloudsatIN%Nlevels:1:-1),       &
+!!!            cloudsatDBZe(:,:,cloudsatIN%Nlevels:1:-1), Nlvgrid,          &
+!!!            vgrid_zl(Nlvgrid:1:-1), vgrid_zu(Nlvgrid:1:-1),              &
+!!!            Ze_totFlip(:,:,Nlvgrid:1:-1), log_units=.true.               )
+       do i=1,cloudsatIN%Npoints
+       ! Regridding lower layers with former vertical regridding routine
+       call cosp_change_vertical_grid(1,cloudsatIN%Ncolumns,cloudsatIN%Nlevels,     &
+            cospgridIN%hgt_matrix(i,cloudsatIN%Nlevels:1:-1),                       &
+            cospgridIN%hgt_matrix_half(i,cloudsatIN%Nlevels:1:-1),                  &
+            cloudsatDBZe(i,:,cloudsatIN%Nlevels:1:-1),index_new(i),                 &
+            vgrid_zl(Nlvgrid:Nlvgrid-index_new(i):-1),                              &
+            vgrid_zu(Nlvgrid:Nlvgrid-index_new(i):-1),                              &
+            Ze_totFlip(i,:,Nlvgrid:Nlvgrid-index_new(i):-1),log_units=.true.        )
+       ! Interpolating upper layers with new interpolation routine
+       call cosp_interp_new_grid(1,cloudsatIN%Ncolumns,cloudsatIN%Nlevels,          &
+            cospgridIN%hgt_matrix(i,cloudsatIN%Nlevels:1:-1),                       &
+            cospgridIN%hgt_matrix_half(i,cloudsatIN%Nlevels:1:-1),                  &
+            cloudsatDBZe(i,:,cloudsatIN%Nlevels:1:-1),Nlvgrid-index_new(i),         &
+            vgrid_z(Nlvgrid-index_new(i):1:-1),vgrid_zu(Nlvgrid-index_new(i):1:-1), &
+            Ze_totFlip(i,:,Nlvgrid-index_new(i):1:-1),log_units=.true.              )
+       enddo
+
        call cosp_diag_warmrain( cloudsatIN%Npoints, cloudsatIN%Ncolumns,      & !! in
                                 Nlvgrid,                                      & !! in
                                 tmpFlip,                                      & !! in
@@ -1643,7 +1741,7 @@ CONTAINS
                                 Ze_totFlip,                                   & !! in
                                 cfodd_ntotal,                                 & !! inout
                                 wr_occfreq_ntotal                             ) !! inout
-       deallocate( zlev, delz, t_in, tmpFlip, ze_totFlip )
+       deallocate( zlev, delz, t_in, tmpFlip, ze_totFlip, index_new )
     else  ! do not use vgrid interporation ---------------------------------------!
        !! original model grid
        allocate( delz(cloudsatIN%Npoints,cospIN%Nlevels) )

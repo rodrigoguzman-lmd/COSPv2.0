@@ -365,9 +365,6 @@ contains
     if (platform .eq. 'atlid') latlid=.true.
     if (platform .eq. 'grlidar532') lgrlidar532=.true.
         
-!!  Calling subroutine to determine the lowest altitude where to start interpolation
-    call cosp_find_grid_indexes(Npoints, Nlevels, zlev_half(:,Nlevels:1:-1), dz(1), index_new)
-
     ! Vertically regrid input data
     if (use_vgrid) then 
        !!! Regredding fields with low vertical variability (i.e. Pressure) can be performed with
@@ -377,6 +374,9 @@ contains
        !!! dz_model is less than new vertical grid thickness dz_new) in order not to miss all
        !!! the high resolution original information, and have to be linearly interpolated in the
        !!! upper layers where dz_model > dz_new.
+
+       !!!  Calling subroutine to determine the lowest altitude where to start interpolation
+       call cosp_find_grid_indexes(Npoints, Nlevels, zlev_half(:,Nlevels:1:-1), dz(1), index_new)
 
        ph_in(:,1,:) = pplay(:,nlevels:1:-1)
        call cosp_interp_new_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
@@ -389,9 +389,9 @@ contains
        call cosp_change_vertical_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
             pnorm(i,:,nlevels:1:-1),index_new(i),vgrid_zl(llm:llm-index_new(i):-1),                 &
             vgrid_zu(llm:llm-index_new(i):-1),pnormFlip(i,:,llm:llm-index_new(i):-1))
-       ! Interpolating upper layers of the profiles with new interpolation routine
-          call cosp_interp_new_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
-            pnorm(i,:,nlevels:1:-1),llm-index_new(i),vgrid_z(llm-index_new(i):1:-1), &
+       ! Interpolating upper layers with new interpolation routine
+       call cosp_interp_new_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+            pnorm(i,:,nlevels:1:-1),llm-index_new(i),vgrid_z(llm-index_new(i):1:-1),           &
             vgrid_zu(llm-index_new(i):1:-1),pnormFlip(i,:,llm-index_new(i):1:-1))
        enddo
 
@@ -399,24 +399,24 @@ contains
           t_in(:,1,:)=tmp(:,nlevels:1:-1)
        do i=1,Npoints
        ! Regridding lower layers with former vertical regridding routine
-          call cosp_change_vertical_grid(1,1,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
-               t_in(i,1,:),index_new(i),vgrid_zl(llm:llm-index_new(i):-1),                          &
-               vgrid_zu(llm:llm-index_new(i):-1),tmpFlip(i,1,llm:llm-index_new(i):-1))
+       call cosp_change_vertical_grid(1,1,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+            t_in(i,1,:),index_new(i),vgrid_zl(llm:llm-index_new(i):-1),                          &
+            vgrid_zu(llm:llm-index_new(i):-1),tmpFlip(i,1,llm:llm-index_new(i):-1))
        ! Interpolating upper layers of the profiles with new interpolation routine
-          call cosp_interp_new_grid(1,1,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
-            t_in(i,1,:),llm-index_new(i),vgrid_z(llm-index_new(i):1:-1), &
+       call cosp_interp_new_grid(1,1,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+            t_in(i,1,:),llm-index_new(i),vgrid_z(llm-index_new(i):1:-1),                    &
             vgrid_zu(llm-index_new(i):1:-1),tmpFlip(i,1,llm-index_new(i):1:-1))
        enddo
 !!          call cosp_interp_new_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
 !!               t_in,llm,vgrid_z(llm:1:-1),vgrid_zu(llm:1:-1),tmpFlip(:,1,llm:1:-1))
        do i=1,Npoints
        ! Regridding lower layers with former vertical regridding routine
-          call cosp_change_vertical_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
-               pnorm_perp(i,:,nlevels:1:-1),index_new(i),vgrid_zl(llm:llm-index_new(i):-1),            &
-               vgrid_zu(llm:llm-index_new(i):-1),pnorm_perpFlip(i,:,llm:llm-index_new(i):-1))
+       call cosp_change_vertical_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+            pnorm_perp(i,:,nlevels:1:-1),index_new(i),vgrid_zl(llm:llm-index_new(i):-1),            &
+            vgrid_zu(llm:llm-index_new(i):-1),pnorm_perpFlip(i,:,llm:llm-index_new(i):-1))
        ! Interpolating upper layers of the profiles with new interpolation routine
-          call cosp_interp_new_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
-            pnorm_perp(i,:,nlevels:1:-1),llm-index_new(i),vgrid_z(llm-index_new(i):1:-1), &
+       call cosp_interp_new_grid(1,Ncol,Nlevels,zlev(i,nlevels:1:-1),zlev_half(i,nlevels:1:-1),&
+            pnorm_perp(i,:,nlevels:1:-1),llm-index_new(i),vgrid_z(llm-index_new(i):1:-1),      &
             vgrid_zu(llm-index_new(i):1:-1),pnorm_perpFlip(i,:,llm-index_new(i):1:-1))
        enddo
        endif
