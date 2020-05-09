@@ -27,11 +27,14 @@
 ! OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 !
 ! History:
-! Mar 2020 - R. Guzman        - Introducing new linear interpolation routine to perform
+! May 2020 - R. Guzman        - Introducing new linear interpolation routine to perform
 !                               interpolations for the lidar and radar simulators. Used
 !                               along the full vertical extent when regridding low
-!                               vertical variability fields, and only for upper layers
-!                               of high variability fields (ATB, Reflectivities). 
+!                               vertical variability fields, and mixing it with the legacy
+!                               vertical regridding routine COSP_CHANGE_VERTICAL_GRID in
+!                               order to avoid striping features to appear in mid-high
+!                               atmopsheric levels of high variability fields (ATB,
+!                               Reflectivities). 
 !
 ! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 MODULE MOD_INTERP

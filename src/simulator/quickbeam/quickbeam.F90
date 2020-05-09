@@ -47,7 +47,7 @@
 !     summation. (Roger Marchand)
 ! May 2015 - D. Swales - Modified for COSPv2.0
 !
-! Mar 2020 - R.Guzman - Introduced new interpolation routine
+! May 2020 - R.Guzman - Introduced new interpolation routine
 !
 ! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 module quickbeam
@@ -59,7 +59,8 @@ module quickbeam
                                   N_HYDRO,nCloudsatPrecipClass,cloudsat_preclvl,vgrid_z
 
   USE MOD_COSP_STATS,       ONLY: COSP_LIDAR_ONLY_CLOUD,hist1D,COSP_CHANGE_VERTICAL_GRID,   &
-                                  COSP_INTERP_NEW_GRID,COSP_FIND_GRID_INDEXES
+                                  COSP_INTERP_NEW_GRID,COSP_FIND_GRID_INDEXES,              &
+                                  COSP_MIXING_REGRID_METHODS
   implicit none
 
   integer,parameter :: &
@@ -275,7 +276,6 @@ contains
     real(wp) :: zstep
     real(wp),dimension(npoints,ncolumns,llm) :: ze_toti,ze_noni
     logical :: lcloudsat = .false.
-    integer,dimension(Npoints)               :: index_new
 
     ! Which platforms to create diagnostics for?
     if (platform .eq. 'cloudsat') lcloudsat=.true.
@@ -285,29 +285,16 @@ contains
        if (use_vgrid) then
           ! Regrid in the vertical (*NOTE* This routine requires SFC-2-TOA ordering, so flip
           ! inputs and outputs to maintain TOA-2-SFC ordering convention in COSP2.)
-       !!! Regredding fields with low vertical variability (i.e. Pressure) can be performed with
+       !!! Regridding fields with low vertical variability (i.e. Pressure) can be performed with
        !!! a simple linear interpolation. Fields with high vertical variability, particularly
        !!! in the lower layers of the atmosphere (i.e. Reflectivity = Ze_tot), have to be
-       !!! regridded with the former vertical regrid routine in the lower layers (where model
-       !!! layer thickness dz_model is less than new vertical grid thickness dz_new) in order
-       !!! not to miss all the high resolution original information, and have to be linearly
-       !!! interpolated in the upper layers where dz_model > dz_new.
+       !!! regridded with the new COSP_MIXING_REGRID_METHODS routine which mixes both the
+       !!! legacy and the linear interpolation vertical regridding methods in order to
+       !!! avoid striping features to appear in the mid-high levels of the atmosphere.
 
-       !!!  Calling subroutine to determine the lowest altitude where to start interpolation
-       call cosp_find_grid_indexes(Npoints, Nlevels, zlev_half(:,Nlevels:1:-1), dz(1), index_new)
-
-       do i=1,Npoints
-       ! Regridding lower layers with former vertical regridding routine
-       call cosp_change_vertical_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),   &
-            zlev_half(i,nlevels:1:-1),Ze_tot(i,:,nlevels:1:-1),index_new(i),     &
-            vgrid_zl(llm:llm-index_new(i):-1),vgrid_zu(llm:llm-index_new(i):-1), &
-            Ze_toti(i,:,llm:llm-index_new(i):-1),log_units=.true.)
-       ! Interpolating upper layers with new interpolation routine
-       call cosp_interp_new_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),        &
-            zlev_half(i,nlevels:1:-1),Ze_tot(i,:,nlevels:1:-1),llm-index_new(i), &
-            vgrid_z(llm-index_new(i):1:-1),vgrid_zu(llm-index_new(i):1:-1),      &
-            Ze_toti(i,:,llm-index_new(i):1:-1))
-       enddo
+       call cosp_mixing_regrid_methods(Npoints,Ncolumns,Nlevels,zlev(:,nlevels:1:-1),    &
+            zlev_half(:,nlevels:1:-1),Ze_tot(:,:,nlevels:1:-1),llm,vgrid_z(llm:1:-1),    &
+            vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),Ze_toti(:,:,llm:1:-1),log_units=.true.)
           
           ! Effective reflectivity histogram
           do i=1,Npoints
@@ -319,18 +306,9 @@ contains
 
           ! Compute cloudsat near-surface precipitation diagnostics
           ! First, regrid in the vertical Ze_tot_non.
-       do i=1,Npoints
-       ! Regridding lower layers with former vertical regridding routine
-       call cosp_change_vertical_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),   &
-            zlev_half(i,nlevels:1:-1),Ze_tot_non(i,:,nlevels:1:-1),index_new(i), &
-            vgrid_zl(llm:llm-index_new(i):-1),vgrid_zu(llm:llm-index_new(i):-1), &
-            Ze_noni(i,:,llm:llm-index_new(i):-1),log_units=.true.)
-       ! Interpolating upper layers with new interpolation routine
-          call cosp_interp_new_grid(1,Ncolumns,Nlevels,zlev(i,nlevels:1:-1),         &
-            zlev_half(i,nlevels:1:-1),Ze_tot_non(i,:,nlevels:1:-1),llm-index_new(i), &
-            vgrid_z(llm-index_new(i):1:-1),vgrid_zu(llm-index_new(i):1:-1),          &
-            Ze_noni(i,:,llm-index_new(i):1:-1))
-       enddo
+       call cosp_mixing_regrid_methods(Npoints,Ncolumns,Nlevels,zlev(:,nlevels:1:-1),    &
+            zlev_half(:,nlevels:1:-1),Ze_tot_non(:,:,nlevels:1:-1),llm,vgrid_z(llm:1:-1),    &
+            vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),Ze_noni(:,:,llm:1:-1),log_units=.true.)
 
           ! Compute the zstep distance between two atmopsheric layers
 	  zstep = vgrid_zu(1)-vgrid_zu(2)
